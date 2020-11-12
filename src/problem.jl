@@ -34,15 +34,15 @@ struct Problem{Q<:QuadratureRule,T<:AbstractFloat}
     model::AbstractModel
     obj::AbstractObjective
     constraints::ConstraintList
-    x0::MVector
-    xf::MVector
+    x0::AbstractVector
+    xf::AbstractVector
     Z::Traj
     N::Int
     t0::T
     tf::T
     function Problem{Q}(model::AbstractModel, obj::AbstractObjective,
             constraints::ConstraintList,
-            x0::StaticVector, xf::StaticVector,
+            x0::AbstractVector, xf::AbstractVector,
             Z::Traj, N::Int, t0::T, tf::T) where {Q,T}
         n,m = size(model)
         @assert length(x0) == length(xf) == n

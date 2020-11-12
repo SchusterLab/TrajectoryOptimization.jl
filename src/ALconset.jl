@@ -64,15 +64,15 @@ function ALConstraintSet(cons::ConstraintList, model::AbstractModel)
 	convals = convert(Vector{ConVal}, convals)
     λ = map(1:ncon) do i
         p = length(cons[i])
-        [@SVector zeros(p) for i in cons.inds[i]]
+        [zeros(p) for i in cons.inds[i]]
     end
     μ = map(1:ncon) do i
         p = length(cons[i])
-        [@SVector ones(p) for i in cons.inds[i]]
+        [ones(p) for i in cons.inds[i]]
     end
     a = map(1:ncon) do i
         p = length(cons[i])
-        [@SVector ones(Bool,p) for i in cons.inds[i]]
+        [ones(Bool,p) for i in cons.inds[i]]
     end
     c_max = zeros(ncon)
     μ_max = zeros(ncon)
@@ -133,7 +133,7 @@ function dual_update!(conSet::ALConstraintSet)
     end
 end
 
-function dual_update!(conval::ConVal, λ::Vector{<:SVector}, μ::Vector{<:SVector}, params::ConstraintParams)
+function dual_update!(conval::ConVal, λ::Vector{<:Vector}, μ::Vector{<:Vector}, params::ConstraintParams)
     c = conval.vals
 	λ_max = params.λ_max
 	λ_min = sense(conval.con) == Equality() ? -λ_max : zero(λ_max)
@@ -148,7 +148,7 @@ function penalty_update!(conSet::ALConstraintSet)
 	end
 end
 
-function penalty_update!(μ::Vector{<:SVector}, params::ConstraintParams)
+function penalty_update!(μ::Vector{<:Vector}, params::ConstraintParams)
 	ϕ = params.ϕ
 	μ_max = params.μ_max
 	for i in eachindex(μ)
@@ -163,7 +163,7 @@ function update_active_set!(conSet::ALConstraintSet, val::Val{tol}=Val(0.0)) whe
 	end
 end
 
-function update_active_set!(a::Vector{<:StaticVector}, λ::Vector{<:StaticVector},
+function update_active_set!(a::Vector{<:Vector}, λ::Vector{<:Vector},
 		conval::ConVal, ::Val{tol}) where tol
 	if sense(conval.con) == Inequality()
 		for i in eachindex(a)
@@ -179,11 +179,11 @@ function cost!(J::Vector{<:Real}, conSet::ALConstraintSet)
 	end
 end
 
-function cost!(J::Vector{<:Real}, conval::ConVal, λ::Vector{<:StaticVector},
-		μ::Vector{<:StaticVector}, a::Vector{<:StaticVector})
+function cost!(J::Vector{<:Real}, conval::ConVal, λ::Vector{<:Vector},
+		μ::Vector{<:Vector}, a::Vector{<:Vector})
 	for (i,k) in enumerate(conval.inds)
-		c = SVector(conval.vals[i])
-		Iμ = Diagonal(SVector(μ[i] .* a[i]))
+		c = conval.vals[i]
+		Iμ = Diagonal(μ[i] .* a[i])
 		J[k] += λ[i]'c .+ 0.5*c'Iμ*c
 	end
 end
@@ -209,8 +209,8 @@ end
 			E[k].r .+= cu'g
 		end
 	elseif C<: StageConstraint
-		ix = SVector{n}(1:n)
-		iu = SVector{m}(n .+ (1:m))
+		ix = 1:n
+		iu = n .+ (1:m)
 		expansion = quote
 			cx = ∇c[:,$ix]
 			cu = ∇c[:,$iu]
@@ -225,7 +225,7 @@ end
 	end
 	quote
 		for (i,k) in enumerate(conval.inds)
-			∇c = SMatrix(conval.jac[i])
+			∇c = conval.jac[i]
 			c = conval.vals[i]
 			Iμ = Diagonal(a[i] .* μ[i])
 			g = Iμ*c .+ λ[i]
@@ -254,7 +254,7 @@ function max_penalty!(conSet::ALConstraintSet{T}) where T
     end
 end
 
-function max_penalty!(μ_max::Vector{<:Real}, μ::Vector{<:StaticVector})
+function max_penalty!(μ_max::Vector{<:Real}, μ::Vector{<:AbstractVector})
     for i in eachindex(μ)
         μ_max[i] = maximum(μ[i])
     end
@@ -268,7 +268,7 @@ function reset!(conSet::ALConstraintSet)
 end
 
 function reset_duals!(conSet::ALConstraintSet)
-	function _reset!(V::Vector{<:SVector})
+	function _reset!(V::Vector{<:Vector})
 	    for i in eachindex(V)
 	        V[i] = zero(V[i])
 	    end
@@ -279,7 +279,7 @@ function reset_duals!(conSet::ALConstraintSet)
 end
 
 function reset_penalties!(conSet::ALConstraintSet)
-	function _reset!(V::Vector{<:SVector}, params::ConstraintParams)
+	function _reset!(V::Vector{<:Vector}, params::ConstraintParams)
 	    for i in eachindex(V)
 	        V[i] = zero(V[i]) .+ params.μ0
 	    end

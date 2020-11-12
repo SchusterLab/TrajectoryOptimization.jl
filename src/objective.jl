@@ -74,7 +74,7 @@ Base.show(io::IO, obj::Objective{C}) where C = print(io,"Objective")
 ############################################################################################
 #                            Quadratic Objectives (Expansions)
 ############################################################################################
-const QuadraticObjective{n,m,T} = Objective{QuadraticCost{n,m,T,SizedMatrix{n,n,T,2},SizedMatrix{m,m,T,2}}}
+const QuadraticObjective{n,m,T} = Objective{QuadraticCost{n,m,T,Matrix{T},Matrix{T}}}
 const QuadraticExpansion{n,m,T} = Objective{<:QuadraticCostFunction{n,m,T}}
 const DiagonalCostFunction{n,m,T} = Union{DiagonalCost{n,m,T},QuadraticCost{n,m,T,<:Diagonal,<:Diagonal}}
 
@@ -93,10 +93,10 @@ function QuadraticObjective(obj::QuadraticObjective, model::LieGroupModel)
     @assert length(obj[1].q) == RobotDynamics.state_diff_size(model)
     n,m = size(model)
     costfuns = map(obj.cost) do costfun
-        Q = SizedMatrix{n,n}(zeros(n,n))
+        Q = zeros(n,n)
         R = costfun.R
-        H = SizedMatrix{m,n}(zeros(m,n))
-        q = @MVector zeros(n)
+        H = zeros(m,n)
+        q = zeros(n)
         r = costfun.r
         c = costfun.c
         QuadraticCost(Q,R,H,q,r,c, checks=false, terminal=costfun.terminal)

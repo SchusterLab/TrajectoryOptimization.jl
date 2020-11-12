@@ -33,17 +33,12 @@ only `xf[inds]` will be used.
 """
 struct GoalConstraint{P,T} <: StateConstraint
 	n::Int
-	xf::MVector{P,T}
-	inds::SVector{P,Int}
-	function GoalConstraint(xf::AbstractVector{T}, inds::SVector{p,Int}) where {p,T}
-		new{p,T}(length(xf), xf[inds], inds)
-	end
+	xf::Vector{T}
+	inds::Vector{Int}
 end
 
-function GoalConstraint(xf::AbstractVector, inds=1:length(xf))
-	p = length(inds)
-	inds = SVector{p}(inds)
-	GoalConstraint(xf, inds)
+function GoalConstraint(xf::AbstractVector{T}, inds=1:length(xf)) where {T}
+	GoalConstraint{length(inds), T}(length(xf), xf[inds], Vector(inds))
 end
 
 Base.copy(con::GoalConstraint) = GoalConstraint(copy(con.xf), con.inds)
@@ -60,7 +55,7 @@ function primal_bounds!(zL,zU,con::GoalConstraint)
 	return true
 end
 
-evaluate(con::GoalConstraint, x::StaticVector) = x[con.inds] - con.xf
+evaluate(con::GoalConstraint, x::AbstractVector) = x[con.inds] - con.xf
 function jacobian!(∇c, con::GoalConstraint, z::KnotPoint)
 	T = eltype(∇c)
 	for (i,j) in enumerate(con.inds)

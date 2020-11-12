@@ -311,9 +311,9 @@ Any optional or omitted values will be set to zero(s). The keyword arguments are
 mutable struct QuadraticCost{n,m,T,TQ,TR} <: QuadraticCostFunction{n,m,T}
     Q::TQ                     # Quadratic stage cost for states (n,n)
     R::TR                     # Quadratic stage cost for controls (m,m)
-    H::SizedMatrix{m,n,T,2}   # Quadratic Cross-coupling for state and controls (m,n)
-    q::MVector{n,T}           # Linear term on states (n,)
-    r::MVector{m,T}           # Linear term on controls (m,)
+    H::Matrix{T}   # Quadratic Cross-coupling for state and controls (m,n)
+    q::Vector{T}           # Linear term on states (n,)
+    r::Vector{T}           # Linear term on controls (m,)
     c::T                      # constant term
     terminal::Bool
     zeroH::Bool
@@ -345,11 +345,11 @@ control_dim(cost::QuadraticCost) = length(cost.r)
 is_blockdiag(cost::QuadraticCost) = cost.zeroH
 
 function QuadraticCost{T}(n::Int,m::Int; terminal=false) where T
-    Q = SizedMatrix{n,n}(Matrix(one(T)*I,n,n))
-    R = SizedMatrix{m,m}(Matrix(one(T)*I,m,m))
-    H = SizedMatrix{m,n}(zeros(T,m,n))
-    q = SizedVector{n}(zeros(T,n))
-    r = SizedVector{m}(zeros(T,m))
+    Q = Matrix(one(T)*I,n,n)
+    R = Matrix(one(T)*I,m,m)
+    H = zeros(T,m,n)
+    q = zeros(T,n)
+    r = zeros(T,m)
     c = zero(T)
     QuadraticCost(Q,R,H,q,r,c, checks=false, terminal=terminal)
 end
