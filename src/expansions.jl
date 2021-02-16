@@ -1,8 +1,8 @@
 abstract type AbstractExpansion{T} end
 
 struct GradientExpansion{T,N,M} <: AbstractExpansion{T}
-	x::SizedVector{N,T,1}
-	u::SizedVector{M,T,1}
+	x::SizedVector{N,T}
+	u::SizedVector{M,T}
 	function GradientExpansion{T}(n::Int,m::Int) where T
 		new{T,n,m}(SizedVector{n}(zeros(T,n)), SizedVector{m}(zeros(T,m)))
 	end
@@ -13,11 +13,11 @@ struct DynamicsExpansion{T,N,N̄,M}
 	∇f::Matrix{T} # n × (n+m+1)
 	A_::SubArray{T,2,Matrix{T},Tuple{UnitRange{Int},UnitRange{Int}},false}
 	B_::SubArray{T,2,Matrix{T},Tuple{UnitRange{Int},UnitRange{Int}},false}
-	A::SizedMatrix{N̄,N̄,T,2}
-	B::SizedMatrix{N̄,M,T,2}
-	tmpA::SizedMatrix{N,N,T,2}
-	tmpB::SizedMatrix{N,M,T,2}
-	tmp::SizedMatrix{N,N̄,T,2}
+	A::SizedMatrix{N̄,N̄,T}
+	B::SizedMatrix{N̄,M,T}
+	tmpA::SizedMatrix{N,N,T}
+	tmpB::SizedMatrix{N,M,T}
+	tmp::SizedMatrix{N,N̄,T}
 	function DynamicsExpansion{T}(n0::Int, n::Int, m::Int) where T
 		∇f = zeros(n0,n0+m)
 		ix = 1:n0
