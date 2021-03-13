@@ -400,6 +400,14 @@ function RobotDynamics.set_controls!(Z::NLPTraj, U0)
 	end
 end
 
+function RobotDynamics.rollout!(::Type{Q}, model::AbstractModel, Z::NLPTraj, x0=state(Z[1])) where Q <: RD.QuadratureRule
+	xinds = Z.Zdata.xinds
+	Z.Z[xinds[1]] = x0
+	for k = 1:length(Z)-1
+		Z.Z[xinds[k+1]] = RD.discrete_dynamics(Q, model, Z[k])
+	end
+end
+
 #--- TrajOpt NLP Problem
 
 mutable struct NLPOpts{T}
@@ -453,7 +461,10 @@ struct TrajOptNLP{n,m,T} <: MOI.AbstractNLPEvaluator
 	opts::NLPOpts{T}
 end
 
-function TrajOptNLP(prob::Problem; remove_bounds::Bool=false, jac_type=:sparse)
+function TrajOptNLP(prob::Problem; remove_bounds::Bool=false, jac_type=:sparse, add_dynamics=false)
+	if add_dynamics
+		add_dynamics_constraints!(prob)
+	end
 	n,m,N = size(prob)
 	NN = N*n + (N-1)*m  # number of primal variables
 
@@ -494,12 +505,23 @@ end
 @inline num_constraints(nlp::TrajOptNLP) = length(nlp.data.d)
 
 @inline get_primals(nlp::TrajOptNLP) = nlp.Z.Z
+@inline get_duals(nlp::TrajOptNLP) = nlp.data.λ
 @inline get_trajectory(nlp::TrajOptNLP) = nlp.Z
 @inline get_constraints(nlp::TrajOptNLP) = nlp.conSet
 @inline get_model(nlp::TrajOptNLP) = nlp.model
 @inline max_violation(nlp::TrajOptNLP) = max_violation(get_constraints(nlp))
 @inline initial_trajectory!(nlp::TrajOptNLP, Z0::AbstractTrajectory) = 
 	copyto!(get_trajectory(nlp), Z0)
+
+function integration(nlp::TrajOptNLP)
+	conSet = get_constraints(nlp)
+	for i = 1:length(conSet)
+		if conSet.convals[i].con isa DynamicsConstraint
+			return integration(conSet.convals[i].con)
+		end
+	end
+end
+rollout!(nlp::TrajOptNLP) = rollout!(integration(nlp), get_model(nlp), get_trajectory(nlp))
 
 #---  Evaluation methods
 
@@ -554,7 +576,7 @@ Evaluate the hessian of the cost function for the vector of decision variables `
 function hess_f!(nlp::TrajOptNLP, Z=get_primals(nlp), G=nlp.data.G)
 	N = num_knotpoints(nlp)
 	nlp.Z.Z = Z
-	cost_hessian!(nlp.E, nlp.obj, nlp.Z, true)  # TODO: figure out how to not require the reset
+	cost_hessian!(nlp.E, nlp.obj, nlp.Z, init=true)  # TODO: figure out how to not require the reset
 	if G !== nlp.data.G
 		copyto!(G, nlp.data.G)
 		if nlp.opts.reset_views
@@ -578,7 +600,7 @@ function hess_f_structure(nlp::TrajOptNLP)
 	N = num_knotpoints(nlp)
 	n,m = size(nlp.model)
 	G = spzeros(Int, NN, NN)
-	if nlp.obj isa Objective{<:DiagonalCostFunction}
+	if nlp.obj isa Objective{<:DiagonalCost}
 		for i = 1:NN
 			G[i,i] = i
 		end
@@ -645,7 +667,7 @@ function jac_c!(nlp::TrajOptNLP, Z=get_primals(nlp), C::AbstractArray=nlp.data.D
 		copyto!(C, nlp.data.C)
 		if nlp.opts.reset_views
 			nlp.data.D = C
-			reset_views(nlp.conet, nlp.data)
+			reset_views!(nlp.conSet, nlp.data)
 		end
 	elseif C isa AbstractVector && C != nlp.data.v
 		copyto!(C, nlp.data.v)

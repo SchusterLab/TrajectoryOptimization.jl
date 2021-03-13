@@ -38,6 +38,9 @@ struct GoalConstraint{P,T} <: StateConstraint
 	function GoalConstraint(xf::AbstractVector{T}, inds::SVector{p,Int}) where {p,T}
 		new{p,T}(length(xf), xf[inds], inds)
 	end
+	function GoalConstraint(n::Int, xf::MVector{P,T}, inds::SVector{P,Int}) where {P,T}
+		new{P,T}(n, xf, inds)
+	end
 end
 
 function GoalConstraint(xf::AbstractVector, inds=1:length(xf))
@@ -53,9 +56,9 @@ Base.copy(con::GoalConstraint) = GoalConstraint(copy(con.xf), con.inds)
 @inline state_dim(con::GoalConstraint) = con.n
 @inline is_bound(::GoalConstraint) = true
 function primal_bounds!(zL,zU,con::GoalConstraint)
-	for i in con.inds
-		zL[i] = con.xf[i]
-		zU[i] = con.xf[i]
+	for (i,j) in enumerate(con.inds)
+		zL[j] = con.xf[i]
+		zU[j] = con.xf[i]
 	end
 	return true
 end
@@ -72,7 +75,7 @@ end
 ∇jacobian!(G, con::GoalConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
 
 function change_dimension(con::GoalConstraint, n::Int, m::Int, xi=1:n, ui=1:m)
-	GoalConstraint(con.xf, xi[con.inds])
+	GoalConstraint(con.n, con.xf, xi[con.inds])
 end
 
 function set_goal_state!(con::GoalConstraint, xf::AbstractVector)
@@ -102,7 +105,7 @@ where `W <: Union{State,Control}`.
 struct LinearConstraint{S,P,W,T} <: StageConstraint
 	n::Int
 	m::Int
-	A::SizedMatrix{P,W,T,2}
+	A::SizedMatrix{P,W,T,2,Matrix{T}}
 	b::SVector{P,T}
 	sense::S
 	inds::SVector{W,Int}
@@ -118,8 +121,9 @@ function LinearConstraint(n::Int, m::Int, A::AbstractMatrix, b::AbstractVector,
 		sense::S, inds=1:n+m) where {S<:ConstraintSense}
 	@assert size(A,1) == length(b)
 	p,q = size(A)
-	A = SizedMatrix{p,q}(A)
-	b = SVector{p}(b)
+	T = promote_type(eltype(A), eltype(b))
+	A = SizedMatrix{p,q,T}(A)
+	b = SVector{p,T}(b)
 	LinearConstraint(n,m, A, b, sense, inds)
 end
 
@@ -132,7 +136,7 @@ Base.copy(con::LinearConstraint{S}) where S =
 @inline control_dim(con::LinearConstraint) = con.m
 evaluate(con::LinearConstraint, z::AbstractKnotPoint) = con.A*z.z[con.inds] .- con.b
 function jacobian!(∇c, con::LinearConstraint, z::AbstractKnotPoint)
-	∇c[:,con.inds] .= con.A
+	∇c[:,con.inds[1]:con.inds[end]] .= con.A
 	return true
 end
 
@@ -342,8 +346,10 @@ end
 	NormConstraint{S,D,T}
 
 Constraint of the form
-``\\|y\\|^2 \\{\\leq,=\\} a``
+``\\|y\\|_2 \\leq a``
 where ``y`` is made up of elements from the state and/or control vectors.
+The can be equality constraint, e.g. ``y^T y - a^2 = 0``, an inequality constraint,
+where `y^T y - a^2 \\leq 0`, or a second-order constraint.
 
 # Constructor:
 ```
@@ -352,7 +358,7 @@ NormConstraint(n, m, a, sense, [inds])
 where `n` is the number of states,
     `m` is the number of controls,
     `a` is the constant on the right-hand side of the equation,
-    `sense` is either `Inequality()` or `Equality()`, and
+    `sense` is `Inequality()`, `Equality()`, or `SecondOrderCone()`, and
     `inds` can be a `UnitRange`, `AbstractVector{Int}`, or either `:state` or `:control`
 
 # Examples:
@@ -360,13 +366,19 @@ where `n` is the number of states,
 NormConstraint(3, 2, 4, Equality(), :control)
 ```
 creates a constraint equivalent to
-``\\|u\\|^2 = 4.0`` for a problem with 2 controls.
+``\\|u\\|^2 = 16.0`` for a problem with 2 controls.
 
 ```julia
-NormConstraint(3, 2. 3, Inequality(), :state
+NormConstraint(3, 2, 3, Inequality(), :state)
 ```
 creates a constraint equivalent to
-``\\|x\\|^2 \\leq 2.3`` for a problem with 3 states.
+``\\|x\\|^2 \\leq 9`` for a problem with 3 states.
+
+```julia
+NormConstraint(3, 2, 5, SecondOrderCone(), :control)
+```
+creates a constraint equivalent to 
+``\\|x\\|_2 \\leq 5``.
 
 """
 struct NormConstraint{S,D,T} <: StageConstraint
@@ -391,16 +403,29 @@ end
 @inline control_dim(con::NormConstraint) = con.m
 @inline sense(con::NormConstraint) = con.sense
 @inline Base.length(::NormConstraint) = 1
+@inline Base.length(::NormConstraint{SecondOrderCone,D}) where D = D + 1
 
 function evaluate(con::NormConstraint, z::AbstractKnotPoint)
 	x = z.z[con.inds]
-	return @SVector [x'x - con.val]
+	return @SVector [x'x - con.val*con.val]
+end
+
+function evaluate(con::NormConstraint{SecondOrderCone}, z::AbstractKnotPoint)
+	v = z.z[con.inds]
+	return push(v, con.val)
 end
 
 function jacobian!(∇c, con::NormConstraint, z::AbstractKnotPoint)
 	x = z.z[con.inds]
 	∇c[1,con.inds] .= 2*x
 	return false
+end
+
+function jacobian!(∇c, con::NormConstraint{SecondOrderCone}, z::AbstractKnotPoint)
+	for (i,j) in enumerate(con.inds)
+		∇c[i,j] = 1.0 
+	end
+	return true
 end
 
 function change_dimension(con::NormConstraint, n::Int, m::Int, ix=1:n, iu=1:m)
@@ -510,8 +535,8 @@ end
 
 checkBounds(n::Int, u::Real, l::Real) =
 	checkBounds(n, (@SVector fill(u,n)), (@SVector fill(l,n)))
-checkBounds(n::Int, u::AbstractVector, l::Real) = checkBounds(n, u, (@SVector fill(l,N)))
-checkBounds(n::Int, u::Real, l::AbstractVector) = checkBounds(n, (@SVector fill(u,N)), l)
+checkBounds(n::Int, u::AbstractVector, l::Real) = checkBounds(n, u, fill(l,n))
+checkBounds(n::Int, u::Real, l::AbstractVector) = checkBounds(n, fill(u,n), l)
 
 
 @inline state_dim(con::BoundConstraint) = con.n
@@ -851,3 +876,21 @@ end
 # 		$assignment
 # 	end
 # end
+
+struct QuatVecEq{T} <: StateConstraint
+    n::Int
+    qf::UnitQuaternion{T}
+    qind::SVector{4,Int}
+end
+function evaluate(con::QuatVecEq, x::StaticVector)
+    qf = Rotations.params(con.qf)
+    q = normalize(x[con.qind])
+    dq = qf'q
+    if dq < 0
+        qf *= -1
+    end
+    return -SA[qf[2] - q[2], qf[3] - q[3], qf[4] - q[4]] 
+end
+sense(::QuatVecEq) = Equality()
+state_dim(con::QuatVecEq) = con.n
+Base.length(con::QuatVecEq) = 3

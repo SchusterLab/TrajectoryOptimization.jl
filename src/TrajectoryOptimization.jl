@@ -9,12 +9,15 @@ using StaticArrays
 using LinearAlgebra
 using DocStringExtensions
 using ForwardDiff
+using FiniteDiff
 using UnsafeArrays
 using SparseArrays
 using MathOptInterface
+using Rotations
 const MOI = MathOptInterface
 
 import RobotDynamics
+const RD = RobotDynamics
 
 using RobotDynamics: AbstractModel, LieGroupModel,
 	KnotPoint, StaticKnotPoint, AbstractKnotPoint,
@@ -49,6 +52,10 @@ export  # methods
 	states,
 	controls,
 	get_trajectory,
+	get_times,
+	get_objective,
+	get_constraints,
+	get_model,
 	state_dim,    # from RobotDynamics
 	control_dim   # from RobotDynamics
 
@@ -66,6 +73,8 @@ export
 
 include("expansions.jl")
 include("costfunctions.jl")
+include("quadratic_costs.jl")
+include("lie_costs.jl")
 include("objective.jl")
 
 include("abstract_constraint.jl")
@@ -79,7 +88,6 @@ include("convals.jl")
 
 include("problem.jl")
 include("conset.jl")
-include("ALconset.jl")
 
 include("nlp.jl")
 

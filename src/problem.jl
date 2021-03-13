@@ -48,6 +48,11 @@ struct Problem{Q<:QuadratureRule,T<:AbstractFloat}
         @assert length(x0) == length(xf) == n
         @assert length(Z) == N
         @assert tf > t0
+        @assert RobotDynamics.state_dim(obj) == n  "Objective state dimension doesn't match model"
+        @assert RobotDynamics.control_dim(obj) == m "Objective control dimension doesn't match model"
+        @assert constraints.n == n "Constraint state dimension doesn't match model"
+        @assert constraints.m == m "Constraint control dimension doesn't match model"
+        @assert RobotDynamics.traj_size(Z) == (n,m,N) "Trajectory sizes don't match"
         new{Q,T}(model, obj, constraints, x0, xf, Z, N, t0, tf)
     end
 end
@@ -95,21 +100,21 @@ integration(::DynamicsConstraint)
 Get the integration rule"""
 integration(prob::Problem{Q}) where Q = Q
 
-"```julia
-controls(::Problem)
-controls(::Traj)
-```
-Get the control trajectory
-"
-controls(prob::Problem) = controls(prob.Z)
+"""
+    controls(::Problem)
 
-"```julia
-states(::Problem)
-states(::Traj)
-```
-Get the state trajectory
-"
+Get the control trajectory
+"""
+controls(prob::Problem) = controls(prob.Z)
+controls(x) = controls(get_trajectory(x))
+
+"""
+    states(::Problem)
+
+Get the state trajectory.
+"""
 states(prob::Problem) = states(prob.Z)
+states(x) = states(get_trajectory(x))
 
 """
 	get_times(::Problem)
@@ -124,7 +129,7 @@ Get the times for all the knot points in the problem.
 
 Copy the trajectory
 """
-function initial_trajectory!(prob, Z0::AbstractTrajectory)
+function initial_trajectory!(prob::Problem, Z0::AbstractTrajectory)
 	Z = get_trajectory(prob)
     for k = 1:prob.N
         Z[k].z = Z0[k].z
@@ -164,6 +169,12 @@ function set_initial_time!(prob, t0::Real)
     return Z[end].t 
 end
 
+"""
+    set_goal_state!(prob::Problem, xf::AbstractVector; objective=true, constraint=true)
+
+Change the goal state. If the appropriate flags are `true`, it will also modify a 
+`GoalConstraint` and the objective, assuming it's an `LQRObjective`.
+"""
 function set_goal_state!(prob::Problem, xf::AbstractVector; objective=true, constraint=true)
     if objective
         obj = get_objective(prob)
@@ -190,43 +201,48 @@ Copy the control trajectory
 """
 @inline initial_controls!(prob, U0) = RobotDynamics.set_controls!(get_trajectory(prob), U0)
 
-"```julia
-cost(::Problem)
-cost(::AbstractSolver)
-```
-Compute the cost for the current trajectory"
-@inline cost(prob::Problem) = cost(prob.obj, prob.Z)
+"""
+    cost(::Problem)
+
+Compute the cost for the current trajectory
+    """
+@inline cost(prob::Problem, Z=prob.Z) = cost(prob.obj, Z)
 
 "Copy the problem"
-function copy(prob::Problem{Q}) where Q
-    Problem{Q}(prob.model, copy(prob.obj), copy(prob.constraints), prob.x0, prob.xf,
+function Base.copy(prob::Problem{Q}) where Q
+    Problem{Q}(prob.model, copy(prob.obj), copy(prob.constraints), copy(prob.x0), copy(prob.xf),
         copy(prob.Z), prob.N, prob.t0, prob.tf)
 end
 
 
-function max_violation(prob::Problem, Z::Traj=prob.Z)
-    conSet = get_constraints(prob)
-    evaluate!(conSet, Z)
-    max_violation!(conSet)
-    return maximum(conSet.c_max)
-end
+# function max_violation(prob::Problem, Z::Traj=prob.Z)
+#     conSet = get_constraints(prob)
+#     evaluate!(conSet, Z)
+#     max_violation!(conSet)
+#     return maximum(conSet.c_max)
+# end
 
+"Get the number of constraint values at each time step"
 num_constraints(prob::Problem) = get_constraints(prob).p
-
+"Get problem constraints. Returns `AbstractConstraintSet`."
 @inline get_constraints(prob::Problem) = prob.constraints
+"Get the dynamics model. Returns `RobotDynamics.AbstractModel`."
 @inline get_model(prob::Problem) = prob.model
+"Get the objective. Returns an `AbstractObjective`."
 @inline get_objective(prob::Problem) = prob.obj
+"Get the trajectory. Returns an `RobotDynamics.AbstractTrajectory`"
 @inline get_trajectory(prob::Problem) = prob.Z
+"Determines if the problem is constrained."
 @inline is_constrained(prob) = isempty(get_constraints(prob))
+"Get the in initial state. Returns an `AbstractVector`."
 @inline get_initial_state(prob::Problem) = prob.x0
 
-states(x) = states(get_trajectory(x))
-controls(x) = controls(get_trajectory(x))
 
-"```julia
-change_integration(prob::Problem, Q<:QuadratureRule)
-```
-Change dynamics integration for the problem"
+"""
+    change_integration(prob::Problem, Q<:QuadratureRule)
+
+Change dynamics integration for the problem. Returns a new problem.
+"""
 change_integration(prob::Problem, ::Type{Q}) where Q<:QuadratureRule =
     Problem{Q}(prob)
 
@@ -243,15 +259,19 @@ If a problem is passed in, `Z = prob.Z`, `model = prob.model`, and `x0 = prob.x0
 """
 @inline rollout!(prob::Problem{Q}) where {Q} = rollout!(Q, get_model(prob), get_trajectory(prob), get_initial_state(prob))
 
-function Problem(p::Problem; model=p.model, obj=p.obj, constraints=p.constraints,
-    x0=p.x0, xf=p.xf, t0=p.t0, tf=p.tf)
-    Problem(model, obj, constraints, x0, xf, p.Z, p.N, t0, tf)
+function Problem(p::Problem; model=p.model, obj=copy(p.obj), constraints=copy(p.constraints),
+    x0=copy(p.x0), xf=copy(p.xf), t0=p.t0, tf=p.tf)
+    Problem(model, obj, constraints, x0, xf, copy(p.Z), p.N, t0, tf)
 end
 
-"```julia
-add_dynamics_constraints!(prob::Problem)
-```
-Add dynamics constraints to the constraint set"
+"""
+    add_dynamics_constraints!(prob::Problem, [integration; idx])
+
+Add dynamics constraints to the constraint set. The integration method `integration` 
+defaults to the same integration specified in `prob`, but can be changed. The 
+argument `idx` specifies the location of the dynamics constraint in the constraint vector.
+If `idx == -1`, it will be added at the end of the `ConstraintList`.
+"""
 function add_dynamics_constraints!(prob::Problem{Q}, integration=Q, idx=-1) where Q
 	n,m = size(prob)
     conSet = prob.constraints
@@ -261,7 +281,7 @@ function add_dynamics_constraints!(prob::Problem{Q}, integration=Q, idx=-1) wher
     add_constraint!(conSet, dyn_con, 1:prob.N-1, idx) # add it at the end
 
     # Initial condition
-    init_con = GoalConstraint(prob.x0)
+    init_con = GoalConstraint(n, prob.x0, SVector{n}(1:n))  # make sure it's linked
     add_constraint!(conSet, init_con, 1, 1)  # add it at the top
 
     return nothing

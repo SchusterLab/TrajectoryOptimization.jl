@@ -12,17 +12,26 @@ function ConstraintParams(ϕ::T1 = 10, μ0::T2 = 1.0, μ_max::T3 = 1e8, λ_max::
 	ConstraintParams(T(ϕ), T(μ0), T(μ_max), T(λ_max))
 end
 
+# Iteration
+Base.iterate(conSet::AbstractConstraintSet) =
+	isempty(get_convals(conSet)) ? nothing : (get_convals(conSet)[1].con,1)
+Base.iterate(conSet::AbstractConstraintSet, state::Int) =
+	state >= length(conSet) ? nothing : (get_convals(conSet)[state+1].con, state+1)
+@inline Base.length(conSet::AbstractConstraintSet) = length(get_convals(conSet))
+Base.IteratorSize(::AbstractConstraintSet) = Base.HasLength()
+Base.IteratorEltype(::AbstractConstraintSet) = Base.HasEltype()
+Base.eltype(::AbstractConstraintSet) = AbstractConstraint
 
 # Constraint Evaluation
 function evaluate!(conSet::AbstractConstraintSet, Z::AbstractTrajectory)
-    for conval in get_convals(conSet)
-        evaluate!(conval, Z)
+    for i = 1:length(conSet) 
+        evaluate!(conSet.convals[i], Z)
     end
 end
 
-function jacobian!(conSet::AbstractConstraintSet, Z::AbstractTrajectory)
+function jacobian!(conSet::AbstractConstraintSet, Z::AbstractTrajectory, init::Bool=true)
     for conval in get_convals(conSet)
-        jacobian!(conval, Z)
+        jacobian!(conval, Z, init)
     end
 end
 
@@ -119,10 +128,10 @@ function findmax_violation(conSet::AbstractConstraintSet)
 	end
 	convals = get_convals(conSet)
 	conval = convals[j_con]
-	i_con = findmax(conval.c_max)[2]  # which index
+	i_con = argmax(conval.c_max) # which index
 	k_con = conval.inds[i_con] # time step
 	con_sense = sense(conval.con)
-	viol = [violation(con_sense, v) for v in conval.vals[i_con]]
+	viol = abs.(violation(con_sense, conval.vals[i_con])) 
 	c_max, i_max = findmax(viol)  # index into constraint
 	@assert c_max == c_max0
 	con_name = string(typeof(conval.con).name)
