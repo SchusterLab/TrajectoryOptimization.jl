@@ -1,8 +1,8 @@
 abstract type AbstractExpansion{T} end
 
 struct GradientExpansion{T,N,M} <: AbstractExpansion{T}
-	x::SizedVector{N,T,1}
-	u::SizedVector{M,T,1}
+	x::SizedVector{N,T}
+	u::SizedVector{M,T}
 	function GradientExpansion{T}(n::Int,m::Int) where T
 		new{T,n,m}(SizedVector{n}(zeros(T,n)), SizedVector{m}(zeros(T,m)))
 	end
