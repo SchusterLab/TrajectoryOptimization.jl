@@ -31,20 +31,26 @@ GoalConstraint(xf::AbstractVector, inds)
 where `xf` is an n-dimensional goal state. If `inds` is provided,
 only `xf[inds]` will be used.
 """
-struct GoalConstraint{P,T} <: StateConstraint
+struct GoalConstraint{Txf,Tinds} <: StateConstraint
 	n::Int
-	xf::Vector{T}
-	inds::Vector{Int}
+	xf::Txf
+	inds::Tinds
+    inds_length::Int
 end
 
-function GoalConstraint(xf::AbstractVector{T}, inds=1:length(xf)) where {T}
-	GoalConstraint{length(inds), T}(length(xf), xf[inds], Vector(inds))
+function GoalConstraint(xf::AbstractVector{T}, inds=1:length(xf), vtype=Vector) where {T}
+    n = length(xf)
+    xf_ = xf[inds]
+    inds_ = vtype{Int}(inds)
+    Vxf = typeof(xf_)
+    Vinds = typeof(inds_)
+	GoalConstraint{Vxf, Vinds}(n, xf_, inds_, length(inds_))
 end
 
 Base.copy(con::GoalConstraint) = GoalConstraint(copy(con.xf), con.inds)
 
 @inline sense(::GoalConstraint) = Equality()
-@inline Base.length(con::GoalConstraint{P}) where P = P
+@inline Base.length(con::GoalConstraint) = con.inds_length
 @inline state_dim(con::GoalConstraint) = con.n
 @inline is_bound(::GoalConstraint) = true
 function primal_bounds!(zL,zU,con::GoalConstraint)
@@ -433,34 +439,41 @@ BoundConstraint(n, m; x_min, x_max, u_min, u_max)
 ```
 Any of the bounds can be ±∞. The bound can also be specifed as a single scalar, which applies the bound to all state/controls.
 """
-struct BoundConstraint{P,NM,T} <: StageConstraint
+struct BoundConstraint{Vnm,Vnmlu,Vp} <: StageConstraint
 	n::Int
 	m::Int
-	z_max::SVector{NM,T}
-	z_min::SVector{NM,T}
-	i_max::Vector{Int}
-	i_min::Vector{Int}
-	inds::SVector{P,Int}
+	z_max::Vnm
+	z_min::Vnm
+	i_max::Vnmlu
+	i_min::Vnmlu
+	inds::Vp
 end
 
-Base.copy(bnd::BoundConstraint{P,nm,T}) where {P,nm,T} =
+Base.copy(bnd::BoundConstraint{Vnm,Vp}) where {Vnm,Vp} =
 	BoundConstraint(bnd.n, bnd.m, bnd.z_max, bnd.z_min, 
 		copy(bnd.i_max), copy(bnd.i_min), bnd.inds)
 
 function BoundConstraint(n, m; x_max=Inf*(@SVector ones(n)), x_min=-Inf*(@SVector ones(n)),
-		u_max=Inf*(@SVector ones(m)), u_min=-Inf*(@SVector ones(m)))
+		                 u_max=Inf*(@SVector ones(m)), u_min=-Inf*(@SVector ones(m)),
+                         vtype=Vector)
 	nm = n+m
 
 	# Check and convert bounds
 	x_max, x_min = checkBounds(n, x_max, x_min)
 	u_max, u_min = checkBounds(m, u_max, u_min)
-
+    
 	# Concatenate bounds
 	z_max = [x_max; u_max]
 	z_min = [x_min; u_min]
+    Vnm = typeof(z_max)
 	b = [-z_max; z_min]
 	inds = findall(isfinite, b)
-	inds = SVector{length(inds)}(inds)
+    if vtype <: SVector
+        inds = SVector{length(inds)}(inds)
+    else
+        inds = vtype{Int}(inds)
+    end
+    Vp = typeof(inds)
 
 	# Get linear indices of 1s of Jacobian
 	a_max = findall(isfinite, z_max)
@@ -469,11 +482,10 @@ function BoundConstraint(n, m; x_max=Inf*(@SVector ones(n)), x_min=-Inf*(@SVecto
 	l = length(a_min)
 	carts_u = [CartesianIndex(i,   j) for (i,j) in enumerate(a_max)]
 	carts_l = [CartesianIndex(i+u, j) for (i,j) in enumerate(a_min)]
-	∇c = zeros(u+l, n+m)
-	linds_u = LinearIndices(zeros(u+l,n+m))[carts_u]
-	linds_l = LinearIndices(zeros(u+l,n+m))[carts_l]
-
-	BoundConstraint(n, m, z_max, z_min, linds_u, linds_l, inds)
+	linds_u = vtype{Int}(LinearIndices(zeros(u+l,n+m))[carts_u])
+	linds_l = vtype{Int}(LinearIndices(zeros(u+l,n+m))[carts_l])
+    Vnmlu = typeof(linds_l)
+	BoundConstraint{Vnm,Vnmlu,Vp}(n, m, z_max, z_min, linds_u, linds_l, inds)
 end
 
 function con_label(con::BoundConstraint, ind::Int)
@@ -497,7 +509,7 @@ end
 
 function checkBounds(n::Int, u::AbstractVector, l::AbstractVector)
 	if all(u .>= l)
-		return SVector{n}(u), SVector{n}(l)
+		return u, l
 	else
 		throw(ArgumentError("Upper bounds must be greater than or equal to lower bounds"))
 	end

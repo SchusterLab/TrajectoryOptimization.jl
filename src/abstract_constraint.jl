@@ -107,14 +107,14 @@ Base.length(::C) where {C<:AbstractConstraint} = throw(NotImplemented(:length, S
 "Upper bound of the constraint, as a vector, which is 0 for all constraints
 (except bound constraints)"
 @inline upper_bound(con::AbstractConstraint) =
-    upper_bound(sense(con)) * @SVector ones(length(con))
+    upper_bound(sense(con)) * ones(length(con)) # SVector
 @inline upper_bound(::Inequality) = 0.0
 @inline upper_bound(::Equality) = 0.0
 
 "Upper bound of the constraint, as a vector, which is 0 equality and -Inf for inequality
 (except bound constraints)"
 @inline lower_bound(con::AbstractConstraint) =
-    lower_bound(sense(con)) * @SVector ones(length(con))
+    lower_bound(sense(con)) * ones(length(con)) # SVector
 @inline lower_bound(::Inequality) = -Inf
 @inline lower_bound(::Equality) = 0.0
 
@@ -377,12 +377,12 @@ end
 function ∇jacobian!(
     G,
     con::StageConstraint,
-    x::StaticVector{n},
-    u::StaticVector{m},
+    x::AbstractVector
+    u::AbstractVector,
     λ,
 ) where {n,m}
-    ix = SVector{n}(1:n)
-    iu = SVector{m}(n .+ (1:m))
+    ix = Array(1:n) #SVector
+    iu = Array(n .+ (1:m)) #SVector
     eval_c(z) = evaluate(con, z[ix], z[iu])'λ
     G .+= ForwardDiff.hessian(eval_c, [x; u])
     return false
