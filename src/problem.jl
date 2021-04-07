@@ -1,3 +1,7 @@
+"""
+problem.jl
+"""
+
 """$(TYPEDEF) Trajectory Optimization Problem.
 Contains the full definition of a trajectory optimization problem, including:
 * dynamics model (`Model`)
@@ -30,57 +34,61 @@ where `Z` is a trajectory (Vector of `KnotPoint`s)
 Both `X0` and `U0` can be either a `Matrix` or a `Vector{Vector}`, but must be the same.
 At least 2 of `dt`, `tf`, and `N` need to be specified (or just 1 of `dt` and `tf`).
 """
-struct Problem{Q<:QuadratureRule,T<:AbstractFloat}
-    model::AbstractModel
-    obj::AbstractObjective
+struct Problem{IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,
+               Tix<:AbstractVector,Tiu<:AbstractVector,Tx<:AbstractVector,
+               Tu<:AbstractVector,TM,TV,T<:AbstractFloat}
+    model::Tm
+    obj::To
     constraints::ConstraintList
-    x0::AbstractVector
-    xf::AbstractVector
-    Z::Traj
+    ix::Tix
+    iu::Tiu
+    X::Vector{Tx}
+    U::Vector{Tu}
+    ts::Vector{T}
     N::Int
-    t0::T
-    tf::T
-    function Problem{Q}(model::AbstractModel, obj::AbstractObjective,
-            constraints::ConstraintList,
-            x0::AbstractVector, xf::AbstractVector,
-            Z::Traj, N::Int, t0::T, tf::T) where {Q,T}
-        n,m = size(model)
-        @assert length(x0) == length(xf) == n
-        @assert length(Z) == N
-        @assert tf > t0
-        new{Q,T}(model, obj, constraints, x0, xf, Z, N, t0, tf)
-    end
+    M::TM
+    V::TV
 end
 
-"Use RK3 as default integration"
-Problem(model, obj, constraints, x0, xf, Z, N, t0, tf) =
-    Problem{RobotDynamics.RK3}(model, obj, constraints, x0, xf, Z, N, t0, tf)
-
-function Problem(model::L, obj::O, xf::AbstractVector, tf;
-        constraints=ConstraintList(size(model)...,length(obj)),
-        t0=zero(tf),
-        x0=zero(xf), N::Int=length(obj),
-        X0=[x0*NaN for k = 1:N],
-        U0=[@SVector zeros(size(model)[2]) for k = 1:N-1],
-        dt=fill((tf-t0)/(N-1),N-1),
-        integration=DEFAULT_Q) where {L,O}
-    n,m = size(model)
-    if dt isa Real
-        dt = fill(dt,N)
-    end
-	@assert sum(dt[1:N-1]) ≈ tf "Time steps are inconsistent with final time"
-    if X0 isa AbstractMatrix
-        X0 = [X0[:,k] for k = 1:size(X0,2)]
-    end
-    if U0 isa AbstractMatrix
-        U0 = [U0[:,k] for k = 1:size(U0,2)]
-    end
-    t = pushfirst!(cumsum(dt), 0)
-    Z = Traj(X0,U0,dt,t)
-
-    Problem{integration}(model, obj, constraints, SVector{n}(x0), SVector{n}(xf),
-        Z, N, t0, tf)
+function Problem(::Type{IR}, model::Tm, obj::To, constraints::ConstraintList, ix::Tix, iu::Tiu,
+                 X::Vector{Tx}, U::Vector{Tu}, ts::Vector{T}, N::Int, M::TM, V::TV) where {
+                     IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,Tix<:AbstractVector,
+                     Tiu<:AbstractVector,Tx<:AbstractVector,Tu<:AbstractVector,TM,TV,T<:AbstractFloat}
+    n, m = size(model)
+    return Problem{IR,Tm,To,Tix,Tiu,Tx,Tu,TM,TV,T}(model, obj, constraints, ix, iu,
+                                                  X, U, ts, N, M, V)
 end
+
+
+# "Use RK3 as default integration"
+# Problem(model, obj, constraints, x0, xf, Z, N, t0, tf) =
+#     Problem{RobotDynamics.RK3}(model, obj, constraints, x0, xf, Z, N, t0, tf)
+
+# function Problem(model::L, obj::O, xf::AbstractVector, tf;
+#         constraints=ConstraintList(size(model)...,length(obj)),
+#         t0=zero(tf),
+#         x0=zero(xf), N::Int=length(obj),
+#         X0=[x0*NaN for k = 1:N],
+#         U0=[@SVector zeros(size(model)[2]) for k = 1:N-1],
+#         dt=fill((tf-t0)/(N-1),N-1),
+#         integration=DEFAULT_Q) where {L,O}
+#     n,m = size(model)
+#     if dt isa Real
+#         dt = fill(dt,N)
+#     end
+# 	@assert sum(dt[1:N-1]) ≈ tf "Time steps are inconsistent with final time"
+#     if X0 isa AbstractMatrix
+#         X0 = [X0[:,k] for k = 1:size(X0,2)]
+#     end
+#     if U0 isa AbstractMatrix
+#         U0 = [U0[:,k] for k = 1:size(U0,2)]
+#     end
+#     t = pushfirst!(cumsum(dt), 0)
+#     Z = Traj(X0,U0,dt,t)
+
+#     Problem{integration}(model, obj, constraints, SVector{n}(x0), SVector{n}(xf),
+#         Z, N, t0, tf)
+# end
 
 
 
@@ -101,7 +109,7 @@ controls(::Traj)
 ```
 Get the control trajectory
 "
-controls(prob::Problem) = controls(prob.Z)
+controls(prob::Problem) = prob.U
 
 "```julia
 states(::Problem)
@@ -109,14 +117,14 @@ states(::Traj)
 ```
 Get the state trajectory
 "
-states(prob::Problem) = states(prob.Z)
+states(prob::Problem) = prob.X
 
 """
 	get_times(::Problem)
 
 Get the times for all the knot points in the problem.
 """
-@inline RobotDynamics.get_times(prob::Problem) = get_times(get_trajectory(prob))
+@inline RobotDynamics.get_times(prob::Problem) = prob.ts
 
 
 """
@@ -125,7 +133,7 @@ Get the times for all the knot points in the problem.
 Copy the trajectory
 """
 function initial_trajectory!(prob, Z0::AbstractTrajectory)
-	Z = get_trajectory(prob)
+    Z = get_trajectory(prob)
     for k = 1:prob.N
         Z[k].z = Z0[k].z
     end

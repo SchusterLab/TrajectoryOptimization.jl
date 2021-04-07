@@ -377,7 +377,7 @@ end
 function ∇jacobian!(
     G,
     con::StageConstraint,
-    x::AbstractVector
+    x::AbstractVector,
     u::AbstractVector,
     λ,
 ) where {n,m}

@@ -17,7 +17,7 @@ const MOI = MathOptInterface
 import RobotDynamics
 
 using RobotDynamics: AbstractModel, LieGroupModel,
-	KnotPoint, StaticKnotPoint, AbstractKnotPoint,
+    AbstractKnotPoint,
 	QuadratureRule, Implicit, Explicit, DEFAULT_Q, HermiteSimpson,
 	is_terminal, state_diff, state_diff_jacobian!, state_diff_jacobian,
 	state, control, states, controls, get_times, Traj, AbstractTrajectory,
@@ -40,7 +40,7 @@ export  # types
 	KnotPoint   # from RobotDynamics
 
 export  # methods
-	cost,
+	# cost,
 	max_violation,
 	initial_controls!,
 	initial_states!,
@@ -74,14 +74,14 @@ include("dynamics_constraints.jl")
 include("constraint_list.jl")
 include("integration.jl")
 
-include("cost.jl")
+# include("cost.jl")
 include("convals.jl")
 
 include("problem.jl")
 include("conset.jl")
 include("ALconset.jl")
 
-include("nlp.jl")
+# include("nlp.jl")
 
 include("utils.jl")
 end

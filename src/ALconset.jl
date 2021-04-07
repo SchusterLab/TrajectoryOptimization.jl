@@ -195,44 +195,44 @@ function cost_expansion!(E::Objective, conSet::ALConstraintSet, Z::AbstractTraje
 	end
 end
 
-@generated function cost_expansion!(E::QuadraticObjective{n,m}, conval::ConVal{C}, λ, μ, a) where {n,m,C}
-	if C <: StateConstraint
-		expansion = quote
-			cx = ∇c
-			E[k].Q .+= cx'Iμ*cx
-			E[k].q .+= cx'g
-		end
-	elseif C <: ControlConstraint
-		expansion = quote
-			cu = ∇c
-			E[k].R .+= cu'Iμ*cu
-			E[k].r .+= cu'g
-		end
-	elseif C<: StageConstraint
-		ix = 1:n
-		iu = n .+ (1:m)
-		expansion = quote
-			cx = ∇c[:,$ix]
-			cu = ∇c[:,$iu]
-			E[k].Q .+= cx'Iμ*cx
-			E[k].q .+= cx'g
-			E[k].H .+= cu'Iμ*cx
-			E[k].R .+= cu'Iμ*cu
-			E[k].r .+= cu'g
-		end
-	else
-		throw(ArgumentError("cost expansion not supported for CoupledConstraints"))
-	end
-	quote
-		for (i,k) in enumerate(conval.inds)
-			∇c = conval.jac[i]
-			c = conval.vals[i]
-			Iμ = Diagonal(a[i] .* μ[i])
-			g = Iμ*c .+ λ[i]
+@generated function cost_expansion!(E::QuadraticCost, conval::ConVal{C}, λ, μ, a) where {n,m,C}
+    if C <: StateConstraint
+        expansion = quote
+            cx = ∇c
+            E[k].Q .+= cx'Iμ*cx
+            E[k].q .+= cx'g
+        end
+    elseif C <: ControlConstraint
+        expansion = quote
+            cu = ∇c
+            E[k].R .+= cu'Iμ*cu
+            E[k].r .+= cu'g
+        end
+    elseif C<: StageConstraint
+        ix = 1:n
+        iu = n .+ (1:m)
+        expansion = quote
+            cx = ∇c[:,$ix]
+            cu = ∇c[:,$iu]
+            E[k].Q .+= cx'Iμ*cx
+            E[k].q .+= cx'g
+            E[k].H .+= cu'Iμ*cx
+            E[k].R .+= cu'Iμ*cu
+            E[k].r .+= cu'g
+        end
+    else
+        throw(ArgumentError("cost expansion not supported for CoupledConstraints"))
+    end
+    quote
+        for (i,k) in enumerate(conval.inds)
+                ∇c = conval.jac[i]
+                c = conval.vals[i]
+                Iμ = Diagonal(a[i] .* μ[i])
+                g = Iμ*c .+ λ[i]
 
-			$expansion
-		end
-	end
+                $expansion
+        end
+    end
 end
 
 """

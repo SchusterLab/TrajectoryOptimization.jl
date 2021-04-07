@@ -41,7 +41,7 @@ end
 function GoalConstraint(xf::Txf, inds::Tinds) where {Txf,Tinds}
     n = length(xf)
     xf_ = xf[inds]
-    return GoalConstraint{Txf,Tinds}(n, xf_, inds, length(inds)))
+    return GoalConstraint{Txf,Tinds}(n, xf_, inds, length(inds))
 end
 
 Base.copy(con::GoalConstraint) = GoalConstraint(copy(con.xf), con.inds)
@@ -452,8 +452,8 @@ Base.copy(bnd::BoundConstraint{Tz,Tiu,Til,Tinds}) where {Tz,Tiu,Til,Tinds} =
     BoundConstraint{Tz,Ti,Tinds}(bnd.n, bnd.m, bnd.z_max, bnd.z_min, 
 		                 copy(bnd.i_max), copy(bnd.i_min), bnd.inds)
 
-function BoundConstraint(n::Int, m::Int, x_max::Tz, x_min::Tz, u_max::Tz, u_min::Tz, vtype=Vector)
-    nm = n+m
+function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx, u_max::Tu, u_min::Tu, V=Vector) where {
+    Tx<:AbstractVector,Tu<:AbstractVector}
     # check bounds
     check_bounds(x_max, x_min)
     check_bounds(u_max, u_min)
@@ -462,12 +462,7 @@ function BoundConstraint(n::Int, m::Int, x_max::Tz, x_min::Tz, u_max::Tz, u_min:
     z_min = [x_min; u_min]
     # get constraint indices
     b = [-z_max; z_min]
-    inds = findall(isfinite, b)
-    if vtype <: SVector
-        inds = SVector{length(inds)}(inds)
-    else
-        inds = vtype{Int}(inds)
-    end
+    inds = V(findall(isfinite, b))
     # get linear indices of 1s of Jacobian
     a_max = findall(isfinite, z_max)
     a_min = findall(isfinite, z_min)
@@ -475,8 +470,9 @@ function BoundConstraint(n::Int, m::Int, x_max::Tz, x_min::Tz, u_max::Tz, u_min:
     l = length(a_min)
     carts_u = [CartesianIndex(i,   j) for (i,j) in enumerate(a_max)]
     carts_l = [CartesianIndex(i+u, j) for (i,j) in enumerate(a_min)]
-    linds_u = vtype{Int}(LinearIndices(zeros(u+l,n+m))[carts_u])
-    linds_l = vtype{Int}(LinearIndices(zeros(u+l,n+m))[carts_l])
+    linds_u = V(LinearIndices(zeros(u+l,n+m))[carts_u])
+    linds_l = V(LinearIndices(zeros(u+l,n+m))[carts_l])
+    Tz = typeof(z_max)
     Tiu = typeof(linds_u)
     Til = typeof(linds_l)
     Tinds = typeof(inds)

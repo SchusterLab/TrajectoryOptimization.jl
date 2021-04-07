@@ -88,16 +88,16 @@ end
 end
 
 function error_expansion!(D::Vector{<:DynamicsExpansion}, model::AbstractModel, G)
-	for d in D
-		save_tmp!(d)
-	end
+    for d in D
+	save_tmp!(d)
+    end
 end
 
 function error_expansion!(D::Vector{<:DynamicsExpansion}, model::LieGroupModel, G)
-	for k in eachindex(D)
-		save_tmp!(D[k])
-		error_expansion!(D[k], G[k], G[k+1])
-	end
+    for k in eachindex(D)
+	save_tmp!(D[k])
+	error_expansion!(D[k], G[k], G[k+1])
+    end
 end
 
 # function linearize(::Type{Q}, model::AbstractModel, z::AbstractKnotPoint) where Q

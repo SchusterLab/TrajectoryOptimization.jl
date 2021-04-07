@@ -25,15 +25,15 @@ end
 Evaluate the cost for a trajectory. If a dynamics constraint is given,
     use the appropriate integration rule, if defined.
 """
-function cost(obj::AbstractObjective, Z::AbstractTrajectory{<:Any,<:Any,<:AbstractFloat})
+function cost(obj::AbstractObjective, Z::AbstractTrajectory)
     cost!(obj, Z)
     J = get_J(obj)
     return sum(J)
 end
 
 # ForwardDiff-able method
-function cost(obj::AbstractObjective, Z::AbstractTrajectory{<:Any,<:Any,T}) where T
-    J = zero(T)
+function cost(obj::AbstractObjective, Z::AbstractTrajectory)
+    J = 0.
     for k = 1:length(obj)
         J += stage_cost(obj[k], Z[k])
     end
