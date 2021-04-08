@@ -50,11 +50,15 @@ struct Problem{IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,
     V::TV
 end
 
-function Problem(::Type{IR}, model::Tm, obj::To, constraints::ConstraintList, ix::Tix, iu::Tiu,
+function Problem(::Type{IR}, model::Tm, obj::To, constraints::ConstraintList,
                  X::Vector{Tx}, U::Vector{Tu}, ts::Vector{T}, N::Int, M::TM, V::TV) where {
-                     IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,Tix<:AbstractVector,
-                     Tiu<:AbstractVector,Tx<:AbstractVector,Tu<:AbstractVector,TM,TV,T<:AbstractFloat}
+                     IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,
+                     Tx<:AbstractVector,Tu<:AbstractVector,TM,TV,T<:AbstractFloat}
     n, m = size(model)
+    ix = V(1:n)
+    iu = V((1:m) .+ n)
+    Tix = typeof(ix)
+    Tiu = typeof(iu)
     return Problem{IR,Tm,To,Tix,Tiu,Tx,Tu,TM,TV,T}(model, obj, constraints, ix, iu,
                                                   X, U, ts, N, M, V)
 end
