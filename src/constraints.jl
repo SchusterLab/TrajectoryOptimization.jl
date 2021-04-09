@@ -31,7 +31,7 @@ GoalConstraint(xf::AbstractVector, inds)
 where `xf` is an n-dimensional goal state. If `inds` is provided,
 only `xf[inds]` will be used.
 """
-struct GoalConstraint{Tx,Ti,Txp,Tup,Tp} <: StateConstraint
+struct GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu} <: StateConstraint
     n::Int
     m::Int
     xf::Tx
@@ -40,6 +40,12 @@ struct GoalConstraint{Tx,Ti,Txp,Tup,Tp} <: StateConstraint
     XP_tmp::Txp # tmp for cost_derivatives!
     UP_tmp::Tup # tmp for cost_derivatives!
     p_tmp::Vector{Tp} # tmp for cost_derivatives!
+    Cx::Tpx
+    Cu::Tpu
+    const_jac::Bool
+    state_expansion::Bool
+    control_expansion::Bool
+    coupled_expansion::Bool
 end
 
 # constructors
@@ -47,12 +53,23 @@ function GoalConstraint(n::Int, m::Int, xf::Tx, inds::Ti, M, V) where {Tx,Ti}
     xf_ = xf[inds]
     p = length(inds)
     XP_tmp = M(zeros(n, p))
-    UP_tmp = nothing
+    UP_tmp = M(zeros(n, p))
     p_tmp = [V(zeros(p)), V(zeros(p))]
+    Cx = M(zeros(p, n))
+    Cu = M(zeros(p, m))
     Txp = typeof(XP_tmp)
     Tup = typeof(UP_tmp)
     Tp = typeof(p_tmp[1])
-    return GoalConstraint{Tx,Ti,Txp,Tup,Tp}(n, m, xf_, inds, p, XP_tmp, UP_tmp, p_tmp)
+    Tpx = typeof(Cx)
+    Tpu = typeof(Cu)
+    const_jac = true
+    state_expansion = true
+    control_expansion = false
+    coupled_expansion = false
+    return GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}(
+        n, m, xf_, inds, p, XP_tmp, UP_tmp, p_tmp, Cx, Cu, const_jac,
+        state_expansion, control_expansion, coupled_expansion,
+    )
 end
 
 # evaluation
@@ -75,9 +92,12 @@ end
 ∇jacobian!(G, con::GoalConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
 
 # methods
-Base.copy(con::GoalConstraint{Tx,Ti,Txp,Tup,Tp}) where {Tx,Ti,Txp,Tup,Tp} = (
-    GoalConstraint{Tx,Ti,Txp,Tup,Tp}(con.n, con.m, copy(con.xf), con.inds, con.p,
-                                     copy(con.XP_tmp), copy(con.UP_tmp), deepcopy(con.p_tmp))
+Base.copy(con::GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}) where {Tx,Ti,Txp,Tup,Tp,Tpx,Tpu} = (
+    GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}(
+        con.n, con.m, copy(con.xf), con.inds, con.p, copy(con.XP_tmp),
+        copy(con.UP_tmp), deepcopy(con.p_tmp), copy(con.Cx), copy(con.Cu), con.const_jac,
+        con.state_expansion, con.control_expansion, con.coupled_expansion
+    )
 )
 @inline sense(::GoalConstraint) = Equality()
 @inline Base.length(con::GoalConstraint) = con.p
@@ -459,7 +479,7 @@ BoundConstraint(n, m; x_min, x_max, u_min, u_max)
 ```
 Any of the bounds can be ±∞. The bound can also be specifed as a single scalar, which applies the bound to all state/controls.
 """
-struct BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp} <: StageConstraint
+struct BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu} <: StageConstraint
     n::Int
     m::Int
     x_max::Tx
@@ -474,6 +494,12 @@ struct BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp} <: StageConstrai
     XP_tmp::Txp
     UP_tmp::Tup
     p_tmp::Vector{Tp}
+    Cx::Tpx
+    Cu::Tpu
+    const_jac::Bool
+    state_expansion::Bool
+    control_expansion::Bool
+    coupled_expansion::Bool
 end
 
 # constructor
@@ -483,38 +509,50 @@ function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx,
     # check bounds
     check_bounds(x_max, x_min)
     check_bounds(u_max, u_min)
+    # TODO: the construction for these indices can be done in a less
+    # disgusting way by finding all finite among x_max, u_max, etc. individually
     # get constraint indices
     b = V([-x_max; -u_max; x_min; u_min])
     inds = V(findall(isfinite, b))
     # indices for evaluation (constraint ind, vector ind)
+    state_expansion = control_expansion = false
     x_max_inds = Tuple{Int,Int}[]
     x_min_inds = Tuple{Int,Int}[]
     u_max_inds = Tuple{Int,Int}[]
     u_min_inds = Tuple{Int,Int}[]
-    for i in inds
-        if i <= n
-            j = i
-            insert!(x_max_inds, length(x_max_inds) + 1, (i, j))
-        elseif n < i <= n + m
-            j = i - n
-            insert!(u_max_inds, length(u_max_inds) + 1, (i, j))
-        elseif n + m < i <= n + m + n
-            j = i - n - m
-            insert!(x_min_inds, length(x_min_inds) + 1, (i, j))
+    for (c_ind, z_ind) in enumerate(inds)
+        if z_ind <= n
+            state_expansion = true
+            x_ind = z_ind
+            insert!(x_max_inds, length(x_max_inds) + 1, (c_ind, x_ind))
+        elseif n < z_ind <= n + m
+            control_expansion = true
+            u_ind = z_ind - n
+            insert!(u_max_inds, length(u_max_inds) + 1, (c_ind, u_ind))
+        elseif n + m < z_ind <= n + m + n
+            state_expansion = true
+            x_ind = z_ind - n - m
+            insert!(x_min_inds, length(x_min_inds) + 1, (c_ind, x_ind))
         else # nm + n < i
-            j = i - n - m - n
-            insert!(u_min_inds, length(u_min_inds) + 1, (i, j))
+            control_expansion = true
+            u_ind = z_ind - n - m - n
+            insert!(u_min_inds, length(u_min_inds) + 1, (c_ind, u_ind))
         end
     end
     x_max_inds = V(x_max_inds)
     x_min_inds = V(x_min_inds)
     u_max_inds = V(u_max_inds)
     u_min_inds = V(u_min_inds)
+    coupled_expansion = state_expansion && control_expansion
     # tmps for jacobian!
     p = length(inds)
     XP_tmp = M(zeros(n, p))
     UP_tmp = M(zeros(m, p))
     p_tmp = [V(zeros(p)), V(zeros(p))]
+    Cx = M(zeros(p, n))
+    Cu = M(zeros(p, m))
+    const_jac = true
+    # types
     Tixu = typeof(x_max_inds)
     Tixl = typeof(x_min_inds)
     Tiuu = typeof(u_max_inds)
@@ -523,10 +561,17 @@ function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx,
     Txp = typeof(XP_tmp)
     Tup = typeof(UP_tmp)
     Tp = typeof(p_tmp[1])
-    return BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}(
+    Tpx = typeof(Cx)
+    Tpu = typeof(Cu)
+    # construct
+    con = BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu}(
         n, m, x_max, x_min, u_max, u_min, x_max_inds, x_min_inds, u_max_inds,
-        u_min_inds, inds, XP_tmp, UP_tmp, p_tmp
+        u_min_inds, inds, XP_tmp, UP_tmp, p_tmp, Cx, Cu, const_jac, state_expansion,
+        control_expansion, coupled_expansion
     )
+    # initialize
+    jacobian!(Cx, Cu, con, x_max, u_max)
+    return con
 end
 
 # evaluation
@@ -560,18 +605,21 @@ function jacobian!(Cx::AbstractMatrix, Cu::AbstractMatrix, con::BoundConstraint,
     for (i, j) in con.u_min_inds
         Cu[i, j] = -1.
     end
-    return true
+    return nothing
 end
 
 ∇jacobian!(G, con::BoundConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
 
 # methods
-Base.copy(con::BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}) where {
-    Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp} = (
-    BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}(
+Base.copy(con::BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu}) where {
+    Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu} = (
+    BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu}(
         con.n, con.m, copy(con.x_max), copy(con.x_min), copy(con.u_max), copy(con.u_min),
         copy(con.x_max_inds), copy(con.x_min_inds), copy(con.u_max_inds), copy(con.u_min_inds),
-        copy(con.inds), copy(XP_tmp), copy(UP_tmp), deepcopy(p_tmp))
+        copy(con.inds), copy(XP_tmp), copy(UP_tmp), deepcopy(p_tmp), copy(con.Cx),
+        copy(con.Cu), con.const_jac, con.state_expansion, con.control_expansion,
+        con.coupled_expansion
+    )
 )
 @inline state_dim(con::BoundConstraint) = con.n
 @inline control_dim(con::BoundConstraint) = con.m

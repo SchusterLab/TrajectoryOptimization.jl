@@ -39,18 +39,18 @@ export  # types
     TrajOptNLP,
     KnotPoint,   # from RobotDynamics
     ConstraintParams,
-    SolverOptions
+    SolverOptions,
 
 export  # methods
 	# cost,
-	max_violation,
-	initial_controls!,
-	initial_states!,
-	initial_trajectory!,
+	# max_violation,
+	# initial_controls!,
+	# initial_states!,
+	# initial_trajectory!,
 	rollout!,
 	states,
 	controls,
-	get_trajectory,
+	# get_trajectory,
 	state_dim,    # from RobotDynamics
 	control_dim   # from RobotDynamics
 

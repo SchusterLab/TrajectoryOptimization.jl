@@ -19,11 +19,9 @@ end
 
 Holds information about a constraint
 """
-struct ConVal{C,Tc,Tcx,Tcu,T}
+struct ConVal{C,Tc,T}
     con::C
     c::Tc # constraint function value
-    Cx::Tcx # cf derivative w.r.t. x
-    Cu::Tcu # cf derivative w.r.t. u
     λ::Tc # dual
     μ::Tc # penalty multiplier
     a::Tc # active constraints
@@ -31,30 +29,17 @@ struct ConVal{C,Tc,Tcx,Tcu,T}
 end
 
 # constructors
-function ConVal(con::C, n::Int, m::Int, V, M, penalty_scaling::T,
+function ConVal(con::C, n::Int, m::Int, M, V, penalty_scaling::T,
                 penalty_initial::T, penalty_max::T, dual_max::T) where {C, T}
     p = length(con)
     c = V(zeros(p))
-    sense_ = sense(con)
-    if sense_ isa StateConstraint
-        Cu = nothing
-        Cx = M(zeros(p, n))
-    elseif sense_ isa ControlConstraint
-        Cu = M(zeros(p, m))
-        Cx = nothing
-    else
-        Cu = M(zeros(p, m))
-        Cx = M(zeros(p, n))
-    end
     λ = V(zeros(p))
     μ = V(fill(penalty_initial, p))
     a = V(ones(Bool, p))
     params = ConstraintParams(penalty_scaling, penalty_initial,
                               penalty_max, dual_max)
     Tc = typeof(c)
-    Tcx = typeof(Cx)
-    Tcu = typeof(Cu)
-    return ConVal{C,Tc,Tcx,Tcu,T}(con, c, Cx, Cu, λ, μ, a, params)
+    return ConVal{C,Tc,T}(con, c, λ, μ, a, params)
 end
 
 # methods
@@ -64,7 +49,7 @@ end
 @inline violation(::Inequality, v::Real) = v > 0 ? v : 0.0
 
 function violation(conval::ConVal)
-    s = sense(cval.con)
+    s = sense(conval.con)
     return violation(s, conval.c)
 end
 

@@ -1,3 +1,7 @@
+"""
+constraint_list.jl
+"""
+
 ############################################################################################
 #					             CONSTRAINT LIST										   #
 ############################################################################################
@@ -54,26 +58,15 @@ A constraint list can be queried if it has a `DynamicsConstraint` via
 # Constructor
 	ConstraintList(n::Int, m::Int, N::Int)
 """
-struct ConstraintList{Ti,Tp} <: AbstractConstraintSet
-	n::Int
-	m::Int
+struct ConstraintList <: AbstractConstraintSet
 	constraints::Vector{AbstractConstraint}
-	inds::Vector{Ti} # active knot point for each constraint in constraints
-	p::Tp # number of constraints at each knot point
+	inds::Vector{AbstractVector} # active knot points for each constraint in constraints
 end
 
-function ConstraintList(n::Int, m::Int, N::Int, V)
+function ConstraintList()
     constraints = AbstractConstraint[]
-    test = V(zeros(Int, 1))
-    if test isa SVector
-        Ti = SVector{S, Int} where {S}
-    else
-        Ti = typeof(test)
-    end
-    inds = Ti[]
-    p = V(zeros(Int, N))
-    Tp = typeof(p)
-    return ConstraintList{Ti,Tp}(n, m, constraints, inds, p)
+    inds = AbstractVector[]
+    return ConstraintList(constraints, inds)
 end
 
 
@@ -112,27 +105,11 @@ cons_and_inds = [(con,ind) in zip(cons)]
 cons_and_inds[1] == (bnd,1:n-1)            # (true)
 ```
 """
-function add_constraint!(cons::ConstraintList, con::AbstractConstraint, inds::UnitRange{Int}, idx=-1)
-    @assert check_dims(con, cons.n, cons.m) "New constaint not consistent with n=$(cons.n) and m=$(cons.m)"
-    @assert inds[end] <= length(cons.p) "Invalid inds, inds[end] must be less than number of knotpoints, $(length(cons.p))"
-    if isempty(cons)
-	idx = -1
-    end
-    if idx == -1
-	push!(cons.constraints, con)
-	push!(cons.inds, inds)
-    elseif 0 < idx <= length(cons)
-	insert!(cons.constraints, idx, con)
-	insert!(cons.inds, idx, inds)
-    else
-	throw(ArgumentError("cannot insert constraint at index=$idx. Length = $(length(cons))"))
-    end
-    num_constraints!(cons)
-    @assert length(cons.constraints) == length(cons.inds)
+function add_constraint!(cons::ConstraintList, con::AbstractConstraint, inds::AbstractVector)
+    push!(cons.constraints, con)
+    push!(cons.inds, inds)
+    return nothing
 end
-
-@inline add_constraint!(cons::ConstraintList, con::AbstractConstraint, k::Int, idx=-1) =
-	add_constraint!(cons, con, k:k, idx)
 
 # Iteration
 Base.iterate(cons::ConstraintList) = length(cons) == 0 ? nothing : (cons[1], 1)
