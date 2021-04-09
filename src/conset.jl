@@ -1,18 +1,5 @@
 
 
-mutable struct ConstraintParams{T}
-	ϕ::T  	    # penalty scaling parameter
-	μ0::T 	    # initial penalty parameter
-	μ_max::T    # max penalty parameter
-	λ_max::T    # max Lagrange multiplier
-end
-
-function ConstraintParams(ϕ::T1 = 10, μ0::T2 = 1.0, μ_max::T3 = 1e8, λ_max::T4 = 1e8) where {T1,T2,T3,T4}
-	T = promote_type(T1,T2,T3,T4)
-	ConstraintParams(T(ϕ), T(μ0), T(μ_max), T(λ_max))
-end
-
-
 # Constraint Evaluation
 function evaluate!(conSet::AbstractConstraintSet, Z::AbstractTrajectory)
     for conval in get_convals(conSet)
@@ -20,6 +7,7 @@ function evaluate!(conSet::AbstractConstraintSet, Z::AbstractTrajectory)
     end
 end
 
+# ***
 function jacobian!(conSet::AbstractConstraintSet, Z::AbstractTrajectory)
     for conval in get_convals(conSet)
         jacobian!(conval, Z)

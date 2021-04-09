@@ -31,45 +31,66 @@ GoalConstraint(xf::AbstractVector, inds)
 where `xf` is an n-dimensional goal state. If `inds` is provided,
 only `xf[inds]` will be used.
 """
-struct GoalConstraint{Txf,Tinds} <: StateConstraint
+struct GoalConstraint{Tx,Ti,Txp,Tup,Tp} <: StateConstraint
     n::Int
-    xf::Txf
-    inds::Tinds
-    inds_length::Int
+    m::Int
+    xf::Tx
+    inds::Ti
+    p::Int
+    XP_tmp::Txp # tmp for cost_derivatives!
+    UP_tmp::Tup # tmp for cost_derivatives!
+    p_tmp::Vector{Tp} # tmp for cost_derivatives!
 end
 
-function GoalConstraint(xf::Txf, inds::Tinds) where {Txf,Tinds}
-    n = length(xf)
+# constructors
+function GoalConstraint(n::Int, m::Int, xf::Tx, inds::Ti, M, V) where {Tx,Ti}
     xf_ = xf[inds]
-    return GoalConstraint{Txf,Tinds}(n, xf_, inds, length(inds))
+    p = length(inds)
+    XP_tmp = M(zeros(n, p))
+    UP_tmp = nothing
+    p_tmp = [V(zeros(p)), V(zeros(p))]
+    Txp = typeof(XP_tmp)
+    Tup = typeof(UP_tmp)
+    Tp = typeof(p_tmp[1])
+    return GoalConstraint{Tx,Ti,Txp,Tup,Tp}(n, m, xf_, inds, p, XP_tmp, UP_tmp, p_tmp)
 end
 
-Base.copy(con::GoalConstraint) = GoalConstraint(copy(con.xf), con.inds)
+# evaluation
+function evaluate!(c::AbstractVector, con::GoalConstraint, x::AbstractVector, u::AbstractVector)
+    for i in con.inds
+        c[i] = x[i] - con.xf[i] 
+    end
+    return nothing
+end
 
+function jacobian!(Cx::AbstractMatrix, Cu::AbstractMatrix, con::GoalConstraint, x::AbstractVector,
+                   u::AbstractVector)
+    T = eltype(Cx)
+    for j in con.inds
+	Cx[j, j] = one(T)
+    end
+    return true
+end
+
+∇jacobian!(G, con::GoalConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
+
+# methods
+Base.copy(con::GoalConstraint{Tx,Ti,Txp,Tup,Tp}) where {Tx,Ti,Txp,Tup,Tp} = (
+    GoalConstraint{Tx,Ti,Txp,Tup,Tp}(con.n, con.m, copy(con.xf), con.inds, con.p,
+                                     copy(con.XP_tmp), copy(con.UP_tmp), deepcopy(con.p_tmp))
+)
 @inline sense(::GoalConstraint) = Equality()
-@inline Base.length(con::GoalConstraint) = con.inds_length
+@inline Base.length(con::GoalConstraint) = con.p
 @inline state_dim(con::GoalConstraint) = con.n
 @inline is_bound(::GoalConstraint) = true
 
 function primal_bounds!(zL,zU,con::GoalConstraint)
-	for i in con.inds
-		zL[i] = con.xf[i]
-		zU[i] = con.xf[i]
-	end
-	return true
+    for i in con.inds
+	zL[i] = con.xf[i]
+	zU[i] = con.xf[i]
+    end
+    return true
 end
-
-evaluate(con::GoalConstraint, x::AbstractVector) = x[con.inds] - con.xf
-
-function jacobian!(∇c, con::GoalConstraint, z::AbstractKnotPoint)
-	T = eltype(∇c)
-	for (i,j) in enumerate(con.inds)
-		∇c[i,j] = one(T)
-	end
-	return true
-end
-
-∇jacobian!(G, con::GoalConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
 
 function change_dimension(con::GoalConstraint, n::Int, m::Int, xi=1:n, ui=1:m)
 	GoalConstraint(con.xf, xi[con.inds])
@@ -438,46 +459,127 @@ BoundConstraint(n, m; x_min, x_max, u_min, u_max)
 ```
 Any of the bounds can be ±∞. The bound can also be specifed as a single scalar, which applies the bound to all state/controls.
 """
-struct BoundConstraint{Tz,Tiu,Til,Tinds} <: StageConstraint
-	n::Int
-	m::Int
-	z_max::Tz
-	z_min::Tz
-	i_max::Tiu
-	i_min::Til
-	inds::Tinds
+struct BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp} <: StageConstraint
+    n::Int
+    m::Int
+    x_max::Tx
+    x_min::Tx
+    u_max::Tu
+    u_min::Tu
+    x_max_inds::Tixu
+    x_min_inds::Tixl
+    u_max_inds::Tiuu
+    u_min_inds::Tiul
+    inds::Ti
+    XP_tmp::Txp
+    UP_tmp::Tup
+    p_tmp::Vector{Tp}
 end
 
-Base.copy(bnd::BoundConstraint{Tz,Tiu,Til,Tinds}) where {Tz,Tiu,Til,Tinds} =
-    BoundConstraint{Tz,Ti,Tinds}(bnd.n, bnd.m, bnd.z_max, bnd.z_min, 
-		                 copy(bnd.i_max), copy(bnd.i_min), bnd.inds)
-
-function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx, u_max::Tu, u_min::Tu, V=Vector) where {
-    Tx<:AbstractVector,Tu<:AbstractVector}
+# constructor
+function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx,
+                         u_max::Tu, u_min::Tu, M, V) where {
+                             Tx<:AbstractVector,Tu<:AbstractVector}
     # check bounds
     check_bounds(x_max, x_min)
     check_bounds(u_max, u_min)
-    # concatenate bounds
-    z_max = [x_max; u_max]
-    z_min = [x_min; u_min]
     # get constraint indices
-    b = [-z_max; z_min]
+    b = V([-x_max; -u_max; x_min; u_min])
     inds = V(findall(isfinite, b))
-    # get linear indices of 1s of Jacobian
-    a_max = findall(isfinite, z_max)
-    a_min = findall(isfinite, z_min)
-    u = length(a_max)
-    l = length(a_min)
-    carts_u = [CartesianIndex(i,   j) for (i,j) in enumerate(a_max)]
-    carts_l = [CartesianIndex(i+u, j) for (i,j) in enumerate(a_min)]
-    linds_u = V(LinearIndices(zeros(u+l,n+m))[carts_u])
-    linds_l = V(LinearIndices(zeros(u+l,n+m))[carts_l])
-    Tz = typeof(z_max)
-    Tiu = typeof(linds_u)
-    Til = typeof(linds_l)
-    Tinds = typeof(inds)
-    return BoundConstraint{Tz,Tiu,Til,Tinds}(n, m, z_max, z_min, linds_u, linds_l, inds)
+    # indices for evaluation (constraint ind, vector ind)
+    x_max_inds = Tuple{Int,Int}[]
+    x_min_inds = Tuple{Int,Int}[]
+    u_max_inds = Tuple{Int,Int}[]
+    u_min_inds = Tuple{Int,Int}[]
+    for i in inds
+        if i <= n
+            j = i
+            insert!(x_max_inds, length(x_max_inds) + 1, (i, j))
+        elseif n < i <= n + m
+            j = i - n
+            insert!(u_max_inds, length(u_max_inds) + 1, (i, j))
+        elseif n + m < i <= n + m + n
+            j = i - n - m
+            insert!(x_min_inds, length(x_min_inds) + 1, (i, j))
+        else # nm + n < i
+            j = i - n - m - n
+            insert!(u_min_inds, length(u_min_inds) + 1, (i, j))
+        end
+    end
+    x_max_inds = V(x_max_inds)
+    x_min_inds = V(x_min_inds)
+    u_max_inds = V(u_max_inds)
+    u_min_inds = V(u_min_inds)
+    # tmps for jacobian!
+    p = length(inds)
+    XP_tmp = M(zeros(n, p))
+    UP_tmp = M(zeros(m, p))
+    p_tmp = [V(zeros(p)), V(zeros(p))]
+    Tixu = typeof(x_max_inds)
+    Tixl = typeof(x_min_inds)
+    Tiuu = typeof(u_max_inds)
+    Tiul = typeof(u_min_inds)
+    Ti = typeof(inds)
+    Txp = typeof(XP_tmp)
+    Tup = typeof(UP_tmp)
+    Tp = typeof(p_tmp[1])
+    return BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}(
+        n, m, x_max, x_min, u_max, u_min, x_max_inds, x_min_inds, u_max_inds,
+        u_min_inds, inds, XP_tmp, UP_tmp, p_tmp
+    )
 end
+
+# evaluation
+function evaluate!(c::AbstractVector, con::BoundConstraint, x::AbstractVector, u::AbstractVector)
+    for (i, j) in con.x_max_inds
+        c[i] = x[j] - con.x_max[j]
+    end
+    for (i, j) in con.u_max_inds
+        c[i] = u[j] - con.u_max[j]
+    end
+    for (i, j) in con.x_min_inds
+        c[i] = con.x_min[j] - x[j]
+    end
+    for (i, j) in con.u_min_inds
+        c[i] = con.u_min[j] - u[j]
+    end
+    return nothing
+end
+
+function jacobian!(Cx::AbstractMatrix, Cu::AbstractMatrix, con::BoundConstraint,
+                   x::AbstractVector, u::AbstractVector)
+    for (i, j) in con.x_max_inds
+        Cx[i, j] = 1.
+    end
+    for (i, j) in con.u_max_inds
+        Cu[i, j] = 1.
+    end
+    for (i, j) in con.x_min_inds
+        Cx[i, j] = -1.
+    end
+    for (i, j) in con.u_min_inds
+        Cu[i, j] = -1.
+    end
+    return true
+end
+
+∇jacobian!(G, con::BoundConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
+
+# methods
+Base.copy(con::BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}) where {
+    Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp} = (
+    BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp}(
+        con.n, con.m, copy(con.x_max), copy(con.x_min), copy(con.u_max), copy(con.u_min),
+        copy(con.x_max_inds), copy(con.x_min_inds), copy(con.u_max_inds), copy(con.u_min_inds),
+        copy(con.inds), copy(XP_tmp), copy(UP_tmp), deepcopy(p_tmp))
+)
+@inline state_dim(con::BoundConstraint) = con.n
+@inline control_dim(con::BoundConstraint) = con.m
+@inline is_bound(::BoundConstraint) = true
+@inline lower_bound(con::BoundConstraint) = con.z_min
+@inline upper_bound(con::BoundConstraint) = con.z_max
+@inline sense(::BoundConstraint) = Inequality()
+@inline Base.length(con::BoundConstraint) = length(con.inds)
 
 function con_label(con::BoundConstraint, ind::Int)
 	i = con.inds[ind]
@@ -506,37 +608,13 @@ function check_bounds(u::AbstractVector, l::AbstractVector)
     end
 end
 
-@inline state_dim(con::BoundConstraint) = con.n
-@inline control_dim(con::BoundConstraint) = con.m
-@inline is_bound(::BoundConstraint) = true
-@inline lower_bound(bnd::BoundConstraint) = bnd.z_min
-@inline upper_bound(bnd::BoundConstraint) = bnd.z_max
-@inline sense(::BoundConstraint) = Inequality()
-@inline Base.length(con::BoundConstraint) = length(con.i_max) + length(con.i_min)
-
-function primal_bounds!(zL, zU, bnd::BoundConstraint)
+function primal_bounds!(zL, zU, con::BoundConstraint)
 	for i = 1:length(zL)
-		zL[i] = max(bnd.z_min[i], zL[i])
-		zU[i] = min(bnd.z_max[i], zU[i])
+		zL[i] = max(con.z_min[i], zL[i])
+		zU[i] = min(con.z_max[i], zU[i])
 	end
 	return true
 end
-
-function evaluate(bnd::BoundConstraint, z::AbstractKnotPoint)
-	[(z.z - bnd.z_max); (bnd.z_min - z.z)][bnd.inds]
-end
-
-function jacobian!(∇c, bnd::BoundConstraint{U,L}, z::AbstractKnotPoint) where {U,L}
-	for i in bnd.i_max
-		∇c[i]  = 1
-	end
-	for i in bnd.i_min
-		∇c[i] = -1
-	end
-	return true
-end
-
-∇jacobian!(G, con::BoundConstraint, z::AbstractKnotPoint, λ::AbstractVector) = true # zeros
 
 function change_dimension(con::BoundConstraint, n::Int, m::Int, ix=1:n, iu=1:m)
 	n0,m0 = con.n, con.m

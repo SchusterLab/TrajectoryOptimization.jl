@@ -32,6 +32,7 @@ struct QuadraticCost{TQ,TR,TH,Tq,Tr,T} <: CostFunction
     terminal::Bool
     Q_diag::Bool
     R_diag::Bool
+    use_R::Bool
     use_H::Bool
     use_r::Bool
     const_grad::Bool
@@ -43,7 +44,7 @@ function QuadraticCost(Q::TQ, R::TR, H::TH, q::Tq, r::Tr, c::T; use_R=true,
                        use_H=true, use_r=true, terminal=false, checks=true) where {
                            TQ,TR,TH,Tq,Tr,T}
     n = size(Q, 1)
-    m = use_R ? size(R, 1) : 0
+    m = size(R, 1)
     if checks
         @assert length(q) == n
         if use_r
@@ -64,17 +65,8 @@ function QuadraticCost(Q::TQ, R::TR, H::TH, q::Tq, r::Tr, c::T; use_R=true,
     const_grad = false
     const_hess = true
     return QuadraticCost{TQ,TR,TH,Tq,Tr,T}(Q, R, H, q, r, c, n, m, terminal,
-                                           Q_diag, R_diag, use_H, use_r, const_grad,
+                                           Q_diag, R_diag, use_R, use_H, use_r, const_grad,
                                            const_hess)
-end
-
-function LQRCost(Q::TQ, xf::AbstractVector; R::TR=nothing, terminal=false) where {TQ,TR}
-    H = nothing
-    q = -Q * xf
-    r = nothing
-    c = 0.5 * xf' * Q * xf
-    use_R = !isnothing(R)
-    return QuadraticCost(Q, R, H, q, r, c; use_R=use_R, use_H=false, use_r=false, terminal=terminal)
 end
 
 # methods
@@ -96,17 +88,20 @@ Base.copy(cost::QuadraticCost{TQ,TR,TH,Tq,Tr,T}) where {TQ,TR,TH,Tq,Tr,T} = (
 Calculate the scalar cost using `cost` given state `x` and control `u`. If only the
 state is provided, it is assumed it is a terminal cost.
 """
-function stage_cost(cost::QuadraticCost, x::AbstractVector)
-    return 0.5 * x' * cost.Q * x + dot(cost.q, x) + cost.c
+function cost(cost_::QuadraticCost, x::AbstractVector)
+    return 0.5 * x' * cost_.Q * x + dot(cost_.q, x) + cost_.c
 end
 
-function stage_cost(cost::QuadraticCost, x::AbstractVector, u::AbstractVector)
-    J = 0.5 * u' * cost.R * u + stage_cost(cost, x)
-    if cost.use_H
-        J += u' * cost.H * x
+function cost(cost_::QuadraticCost, x::AbstractVector, u::AbstractVector)
+    J = cost(cost_, x)
+    if cost_.use_R
+        J += 0.5 * u' * cost_.R * u
     end
-    if cost.use_r
-        J += dot(cost.r, u)
+    if cost_.use_H
+        J += u' * cost_.H * x
+    end
+    if cost_.use_r
+        J += dot(cost_.r, u)
     end
     return J
 end
@@ -153,14 +148,28 @@ end
 
 function hessian!(E::QuadraticCost, cost::QuadraticCost, x, u)
     hessian!(E, cost, x)
-    if cost.R_diag
-        for i = 1:length(u); E.R[i,i] = cost.R[i,i]; end
-    else
-        E.R .= cost.R
+    if cost.use_R
+        if cost.R_diag
+            for i = 1:length(u); E.R[i,i] = cost.R[i,i]; end
+        else
+            E.R .= cost.R
+        end
     end
     if cost.use_H
         E.H .= cost.H
     end
+end
+
+# LQRCost
+function LQRCost(Q::AbstractMatrix, xf::AbstractVector, R::AbstractMatrix, M, V;
+                 use_R=true, terminal=false)
+    n = size(Q, 1)
+    m = size(R, 1)
+    H = M(zeros(m, n))
+    q = -Q * xf
+    r = V(zeros(m))
+    c = 0.5 * xf' * Q * xf
+    return QuadraticCost(Q, R, H, q, r, c; use_R=use_R, use_H=false, use_r=false, terminal=terminal)
 end
 
 # """

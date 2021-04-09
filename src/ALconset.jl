@@ -1,3 +1,6 @@
+"""
+ALconset.jl
+"""
 
 """
 An [`AbstractConstraintSet`](@ref) that stores the constraint values as well as Lagrange
@@ -35,53 +38,15 @@ penalties and/or multipliers can be reset using
 	ALConstraintSet(::ConstraintList, ::AbstractModel)
 	ALConstraintSet(::Problem)
 """
-struct ALConstraintSet{T} <: AbstractConstraintSet
-    convals::Vector{ConVal}
-    errvals::Vector{ConVal}
-    λ::Vector{<:Vector}
-    μ::Vector{<:Vector}
-    active::Vector{<:Vector}
-    c_max::Vector{T}
-    μ_max::Vector{T}
-    μ_maxes::Vector{Vector{T}}
-	params::Vector{ConstraintParams{T}}
-	p::Vector{Int}
+struct ALConstraintSet <: AbstractConstraintSet
+    # vector of convals at each knot point
+    convals::Vector{Vector{ConVal}}
 end
 
-function ALConstraintSet(cons::ConstraintList, model::AbstractModel)
-    n,m = cons.n, cons.m
-    n̄ = RobotDynamics.state_diff_size(model)
-    ncon = length(cons)
-    useG = model isa LieGroupModel
-    errvals = map(1:ncon) do i
-        C,c = gen_convals(n̄, m, cons[i], cons.inds[i])
-        ConVal(n̄, m, cons[i], cons.inds[i], C, c, useG)
-    end
-    convals = map(errvals) do errval
-        ConVal(n, m, errval)
-    end
-	errvals = convert(Vector{ConVal}, errvals)
-	convals = convert(Vector{ConVal}, convals)
-    λ = map(1:ncon) do i
-        p = length(cons[i])
-        [zeros(p) for i in cons.inds[i]]
-    end
-    μ = map(1:ncon) do i
-        p = length(cons[i])
-        [ones(p) for i in cons.inds[i]]
-    end
-    a = map(1:ncon) do i
-        p = length(cons[i])
-        [ones(Bool,p) for i in cons.inds[i]]
-    end
-    c_max = zeros(ncon)
-    μ_max = zeros(ncon)
-    μ_maxes = [zeros(length(ind)) for ind in cons.inds]
-	params = [ConstraintParams() for con in cons.constraints]
-    ALConstraintSet(convals, errvals, λ, μ, a, c_max, μ_max, μ_maxes, params, copy(cons.p))
-end
+function ALConstraintSet(prob::Problem)
 
-@inline ALConstraintSet(prob::Problem) = ALConstraintSet(prob.constraints, prob.model)
+    return ALConstraintSet(convals)
+end
 
 # Iteration
 Base.iterate(conSet::AbstractConstraintSet) =
@@ -92,6 +57,7 @@ Base.iterate(conSet::AbstractConstraintSet, state::Int) =
 Base.IteratorSize(::AbstractConstraintSet) = Base.HasLength()
 Base.IteratorEltype(::AbstractConstraintSet) = Base.HasEltype()
 Base.eltype(::AbstractConstraintSet) = AbstractConstraint
+Base.eltype(::ALConstraintSet)
 
 """
 	link_constraints!(set1, set2)
@@ -135,11 +101,11 @@ end
 
 function dual_update!(conval::ConVal, λ::Vector{<:Vector}, μ::Vector{<:Vector}, params::ConstraintParams)
     c = conval.vals
-	λ_max = params.λ_max
-	λ_min = sense(conval.con) == Equality() ? -λ_max : zero(λ_max)
-	for i in eachindex(conval.inds)
-		λ[i] = clamp.(λ[i] + μ[i] .* c[i], λ_min, λ_max)
-	end
+    λ_max = params.λ_max
+    λ_min = sense(conval.con) == Equality() ? -λ_max : zero(λ_max)
+    for i in eachindex(conval.inds)
+	λ[i] = clamp.(λ[i] + μ[i] .* c[i], λ_min, λ_max)
+    end
 end
 
 function penalty_update!(conSet::ALConstraintSet)
@@ -158,41 +124,41 @@ end
 
 # Active Set
 function update_active_set!(conSet::ALConstraintSet, val::Val{tol}=Val(0.0)) where tol
-	for i in eachindex(conSet.active)
-		update_active_set!(conSet.active[i], conSet.λ[i], conSet.convals[i], val)
-	end
+    for i in eachindex(conSet.active)
+	update_active_set!(conSet.active[i], conSet.λ[i], conSet.convals[i], val)
+    end
 end
 
 function update_active_set!(a::Vector{<:Vector}, λ::Vector{<:Vector},
-		conval::ConVal, ::Val{tol}) where tol
-	if sense(conval.con) == Inequality()
-		for i in eachindex(a)
-			a[i] = @. (conval.vals[i] >= -tol) | (λ[i] > zero(tol))
-		end
+		            conval::ConVal, ::Val{tol}) where tol
+    if sense(conval.con) == Inequality()
+	for i in eachindex(a)
+	    a[i] = @. (conval.vals[i] >= -tol) | (λ[i] > zero(tol))
 	end
+    end
 end
 
 # Cost
 function cost!(J::Vector{<:Real}, conSet::ALConstraintSet)
-	for i in eachindex(conSet.convals)
-		cost!(J, conSet.convals[i], conSet.λ[i], conSet.μ[i], conSet.active[i])
-	end
+    for i in eachindex(conSet.convals)
+	cost!(J, conSet.convals[i], conSet.λ[i], conSet.μ[i], conSet.active[i])
+    end
 end
 
 function cost!(J::Vector{<:Real}, conval::ConVal, λ::Vector{<:Vector},
 		μ::Vector{<:Vector}, a::Vector{<:Vector})
-	for (i,k) in enumerate(conval.inds)
-		c = conval.vals[i]
-		Iμ = Diagonal(μ[i] .* a[i])
-		J[k] += λ[i]'c .+ 0.5*c'Iμ*c
-	end
+    for (i,k) in enumerate(conval.inds)
+	c = conval.vals[i]
+	Iμ = Diagonal(μ[i] .* a[i])
+	J[k] += λ[i]'c .+ 0.5*c'Iμ*c
+    end
 end
 
 function cost_expansion!(E::Objective, conSet::ALConstraintSet, Z::AbstractTrajectory,
-		init::Bool=false, rezero::Bool=false)
-	for i in eachindex(conSet.errvals)
-		cost_expansion!(E, conSet.convals[i], conSet.λ[i], conSet.μ[i], conSet.active[i])
-	end
+		         init::Bool=false, rezero::Bool=false)
+    for i in eachindex(conSet.errvals)
+	cost_expansion!(E, conSet.convals[i], conSet.λ[i], conSet.μ[i], conSet.active[i])
+    end
 end
 
 @generated function cost_expansion!(E::QuadraticCost, conval::ConVal{C}, λ, μ, a) where {n,m,C}

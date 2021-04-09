@@ -54,19 +54,28 @@ A constraint list can be queried if it has a `DynamicsConstraint` via
 # Constructor
 	ConstraintList(n::Int, m::Int, N::Int)
 """
-struct ConstraintList <: AbstractConstraintSet
+struct ConstraintList{Ti,Tp} <: AbstractConstraintSet
 	n::Int
 	m::Int
 	constraints::Vector{AbstractConstraint}
-	inds::Vector{UnitRange{Int}}
-	p::Vector{Int}
-	function ConstraintList(n::Int, m::Int, N::Int)
-		constraints = AbstractConstraint[]
-		inds = UnitRange{Int}[]
-		p = zeros(Int,N)
-		new(n, m, constraints, inds, p)
-	end
+	inds::Vector{Ti} # active knot point for each constraint in constraints
+	p::Tp # number of constraints at each knot point
 end
+
+function ConstraintList(n::Int, m::Int, N::Int, V)
+    constraints = AbstractConstraint[]
+    test = V(zeros(Int, 1))
+    if test isa SVector
+        Ti = SVector{S, Int} where {S}
+    else
+        Ti = typeof(test)
+    end
+    inds = Ti[]
+    p = V(zeros(Int, N))
+    Tp = typeof(p)
+    return ConstraintList{Ti,Tp}(n, m, constraints, inds, p)
+end
+
 
 """
 	add_constraint!(cons::ConstraintList, con::AbstractConstraint, inds::UnitRange, [idx])
@@ -104,22 +113,22 @@ cons_and_inds[1] == (bnd,1:n-1)            # (true)
 ```
 """
 function add_constraint!(cons::ConstraintList, con::AbstractConstraint, inds::UnitRange{Int}, idx=-1)
-	@assert check_dims(con, cons.n, cons.m) "New constaint not consistent with n=$(cons.n) and m=$(cons.m)"
-	@assert inds[end] <= length(cons.p) "Invalid inds, inds[end] must be less than number of knotpoints, $(length(cons.p))"
-	if isempty(cons)
-		idx = -1
-	end
-	if idx == -1
-		push!(cons.constraints, con)
-		push!(cons.inds, inds)
-	elseif 0 < idx <= length(cons)
-		insert!(cons.constraints, idx, con)
-		insert!(cons.inds, idx, inds)
-	else
-		throw(ArgumentError("cannot insert constraint at index=$idx. Length = $(length(cons))"))
-	end
-	num_constraints!(cons)
-	@assert length(cons.constraints) == length(cons.inds)
+    @assert check_dims(con, cons.n, cons.m) "New constaint not consistent with n=$(cons.n) and m=$(cons.m)"
+    @assert inds[end] <= length(cons.p) "Invalid inds, inds[end] must be less than number of knotpoints, $(length(cons.p))"
+    if isempty(cons)
+	idx = -1
+    end
+    if idx == -1
+	push!(cons.constraints, con)
+	push!(cons.inds, inds)
+    elseif 0 < idx <= length(cons)
+	insert!(cons.constraints, idx, con)
+	insert!(cons.inds, idx, inds)
+    else
+	throw(ArgumentError("cannot insert constraint at index=$idx. Length = $(length(cons))"))
+    end
+    num_constraints!(cons)
+    @assert length(cons.constraints) == length(cons.inds)
 end
 
 @inline add_constraint!(cons::ConstraintList, con::AbstractConstraint, k::Int, idx=-1) =

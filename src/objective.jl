@@ -18,28 +18,64 @@ Constructors:
 Objective(cost, cost_term, N)
 ```
 """
-struct Objective{Tsc,Ttc} <: AbstractObjective
-    stage_cost::Tsc
-    terminal_cost::Ttc
+struct Objective{Tc} <: AbstractObjective
+    cost::Vector{Tc}
     N::Int
 end
 
 # constructors
-function Objective(stage_cost::Tsc, terminal_cost::Ttc, N::Int, checks=true) where {
-    Tsc <: CostFunction, Ttc <: CostFunction}
+function Objective(cost::Vector{Tc}, N::Int, checks=true) where {
+    Tc<:CostFunction}
     if checks
-        @assert stage_cost.terminal != true
-        @assert terminal_cost.terminal == true
+        @assert length(cost) == N
+        for k = 1:N-1
+            @assert cost[k].terminal == false
+        end
+        @assert cost[N].terminal == true
     end
-    return Objective{Tsc,Ttc}(stage_cost, terminal_cost, N)
+    return Objective{Tc}(cost, N)
 end
 
 # methods
-Base.copy(obj::Objective) = Objective(copy(obj.stage_cost), copy(obj.terminal_cost), obj.N)
+Base.copy(obj::Objective) = Objective(copy(obj.cost), obj.N)
 Base.show(io::IO, obj::Objective) = print(io,"Objective")
 
-@inline control_dim(obj::Objective) = control_dim(obj.stage_cost[1])
-@inline state_dim(obj::Objective) = state_dim(obj.stage_cost[1])
+@inline control_dim(obj::Objective) = control_dim(obj.cost[1])
+@inline state_dim(obj::Objective) = state_dim(obj.cost[1])
+
+@inline cost(obj::Objective, k::Int, x::AbstractVector) = (
+    cost(obj.cost[k], x)
+)
+
+@inline cost(obj::Objective, k::Int, x::AbstractVector, u::AbstractVector) = (
+    cost(obj.cost[k], x, u)
+)
+
+function cost_derivatives!(E::QuadraticCost, obj::Objective, k::Int, x::AbstractVector)
+    gradient!(E, obj.cost[k], x)
+    hessian!(E, obj.cost[k], x)
+end
+
+function cost_derivatives!(E::QuadraticCost, obj::Objective, k::Int, x::AbstractVector,
+                           u::AbstractVector)
+    gradient!(E, obj.cost[k], x, u)
+    hessian!(E, obj.cost[k], x, u)
+end
+
+# LQR objective
+function LQRObjective(Q::AbstractMatrix, Qf::AbstractMatrix, R::AbstractMatrix,
+                      xf::AbstractVector, n::Int, m::Int, N::Int, M, V)
+    stage = LQRCost(Q, xf, R, M, V)
+    terminal = LQRCost(Qf, xf, R, M, V; use_R=false, terminal=true)
+    Tc = typeof(stage)
+    cost = Vector{Tc}(undef, N)
+    for k = 1:N-1
+        cost[k] = stage
+    end
+    cost[N] = terminal
+    return Objective(cost, N)
+end
+
 
 
 # ############################################################################################
