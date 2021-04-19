@@ -123,7 +123,7 @@ function penalty_update!(μ::Vector{<:Vector}, params::ConstraintParams)
 end
 
 # Active Set
-function update_active_set!(conSet::ALConstraintSet, val::Val{tol}=Val(0.0)) where tol
+function update_active_set!(conSet::ALConstraintSet, val=0.)
     for i in eachindex(conSet.active)
 	update_active_set!(conSet.active[i], conSet.λ[i], conSet.convals[i], val)
     end

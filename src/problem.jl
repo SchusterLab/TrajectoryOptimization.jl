@@ -34,18 +34,22 @@ where `Z` is a trajectory (Vector of `KnotPoint`s)
 Both `X0` and `U0` can be either a `Matrix` or a `Vector{Vector}`, but must be the same.
 At least 2 of `dt`, `tf`, and `N` need to be specified (or just 1 of `dt` and `tf`).
 """
-struct Problem{IR<:QuadratureRule,Tm<:AbstractModel,To<:AbstractObjective,
-               Tix<:AbstractVector,Tiu<:AbstractVector,Tx<:AbstractVector,
-               Tu<:AbstractVector,Tt<:AbstractVector,TM,TMd,TV,T<:AbstractFloat}
+struct Problem{IR,T,Tm,To,Tx,Tix,Tu,Tiu,Tt,TE,TM,TMd,TV}
+    # problem info
+    n::Int
+    m::Int
+    N::Int
     model::Tm
     obj::To
-    constraints::ConstraintList
-    ix::Tix
-    iu::Tiu
+    convals::Vector{Vector{ConVal}}
     X::Vector{Tx}
+    X_tmp::Vector{Tx}
+    ix::Tix
     U::Vector{Tu}
+    U_tmp::Vector{Tu}
+    iu::Tiu
     ts::Tt
-    N::Int
+    E::TE
     M::TM
     Md::TMd
     V::TV
@@ -57,13 +61,31 @@ function Problem(::Type{IR}, model::Tm, obj::To, constraints::ConstraintList,
                      Tx<:AbstractVector,Tu<:AbstractVector,Tt<:AbstractVector,
                      TM,TMd,TV}
     n, m = size(model)
+    # allocate shared resources
+    T = eltype(X[1])
+    X_tmp = [V(zeros(T, n)) for k = 1:N+1] # 1 extra
+    U_tmp = [V(zeros(T, m)) for k = 1:N+1] # 2 extra
+    E = QuadraticCost(M(zeros(T, n, n)), M(zeros(T, m, m)), M(zeros(T, m, n)), V(zeros(T, n)),
+                      V(zeros(T, m)), zero(T); checks=false)
+    # construct indices into concatenated state and controls
     ix = V(1:n)
     iu = V((1:m) .+ n)
+    # initial condition constraint for direct solve
+    initial_state_constraint = GoalConstraint(n, m, copy(X[1]), V(1:n), M, V; direct=true)
+    add_constraint!(constraints, initial_state_constraint, 1:1)
+    # dynamics constraint for direct solve
+    dynamics_constraint = DynamicsConstraint(n, m, IR, model, ts, ix, iu, M, V)
+    add_constraint!(constraints, dynamics_constraint, 2:N-1)
+    # create convals from constraints
+    convals = convals_from_constraint_list(constraints)
+    # put it all together
     Tix = typeof(ix)
     Tiu = typeof(iu)
-    T = Float64
-    return Problem{IR,Tm,To,Tix,Tiu,Tx,Tu,Tt,TM,TMd,TV,T}(model, obj, constraints, ix, iu,
-                                                          X, U, ts, N, M, Md, V)
+    T = eltype(X[1])
+    TE = typeof(E)
+    return Problem{IR,T,Tm,To,Tx,Tix,Tu,Tiu,Tt,TE,TM,TMd,TV}(
+        n, m, N, model, obj, convals, X, X_tmp, ix, U, U_tmp, iu, ts, E, M, Md, V
+    )
 end
 
 

@@ -1,22 +1,10 @@
 import RobotDynamics: jacobian!
 
 
-""""
-Specifies whether the constraint is an equality or inequality constraint.
-Valid subtypes are `Equality`, and `Inequality`.
-The sense of a constraint can be queried using `sense(::AbstractConstraint)`
-"""
-abstract type ConstraintSense end
-"""
-Inequality constraints of the form ``h(x) \\leq 0``.
-Type singleton, so it is created with `Inequality()`
-"""
-struct Equality <: ConstraintSense end
-"""
-Equality constraints of the form ``g(x) = 0`.
-Type singleton, so it is created with `Equality()`.
-"""
-struct Inequality <: ConstraintSense end
+@enum ConstraintSense begin
+    equality = 1
+    inequality = 2
+end
 
 """
     AbstractConstraint
@@ -79,9 +67,6 @@ const StateConstraints =
     Union{StageConstraint,StateConstraint,CoupledConstraint,CoupledStateConstraint}
 const ControlConstraints =
     Union{StageConstraint,ControlConstraint,CoupledConstraint,CoupledControlConstraint}
-
-"Get constraint sense (Inequality vs Equality)"
-sense(::C) where {C<:AbstractConstraint} = throw(NotImplemented(:sense, Symbol(C)))
 
 "Dimension of the state vector"
 RobotDynamics.state_dim(::C) where {C<:StateConstraint} =

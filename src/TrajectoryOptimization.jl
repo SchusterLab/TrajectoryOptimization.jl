@@ -15,6 +15,7 @@ using MathOptInterface
 const MOI = MathOptInterface
 
 import RobotDynamics
+const RD = RobotDynamics
 
 using RobotDynamics: AbstractModel, LieGroupModel,
     AbstractKnotPoint,
@@ -55,22 +56,16 @@ export  # methods
 	control_dim   # from RobotDynamics
 
 export
-	Equality,
-	Inequality,
-	BoundConstraint,
-	CircleConstraint,
-	SphereConstraint,
 	GoalConstraint,
-	LinearConstraint,
-	CollisionConstraint,
-	NormConstraint,
+    DynamicsConstraint,
+	BoundConstraint,
 	add_constraint!
 
 # include("expansions.jl")
 include("costfunctions.jl")
 include("objective.jl")
 
-include("abstract_constraint.jl")
+# include("abstract_constraint.jl")
 include("constraints.jl")
 # include("dynamics_constraints.jl")
 include("constraint_list.jl")

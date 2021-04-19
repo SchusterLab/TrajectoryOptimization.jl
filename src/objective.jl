@@ -43,24 +43,14 @@ Base.show(io::IO, obj::Objective) = print(io,"Objective")
 @inline control_dim(obj::Objective) = control_dim(obj.cost[1])
 @inline state_dim(obj::Objective) = state_dim(obj.cost[1])
 
-@inline cost(obj::Objective, k::Int, x::AbstractVector) = (
-    cost(obj.cost[k], x)
+@inline cost(obj::Objective, X::AbstractVector, U::AbstractVector, k::Int) = (
+    cost(obj.cost[k], X, U, k)
 )
 
-@inline cost(obj::Objective, k::Int, x::AbstractVector, u::AbstractVector) = (
-    cost(obj.cost[k], x, u)
+@inline cost_derivatives!(E::QuadraticCost, obj::Objective, X::AbstractVector,
+                          U::AbstractVector, k::Int) = (
+                              cost_derivatives!(E, obj.cost[k], X, U, k)
 )
-
-function cost_derivatives!(E::QuadraticCost, obj::Objective, k::Int, x::AbstractVector)
-    gradient!(E, obj.cost[k], x)
-    hessian!(E, obj.cost[k], x)
-end
-
-function cost_derivatives!(E::QuadraticCost, obj::Objective, k::Int, x::AbstractVector,
-                           u::AbstractVector)
-    gradient!(E, obj.cost[k], x, u)
-    hessian!(E, obj.cost[k], x, u)
-end
 
 # LQR objective
 function LQRObjective(Q::AbstractMatrix, Qf::AbstractMatrix, R::AbstractMatrix,

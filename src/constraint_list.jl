@@ -58,16 +58,24 @@ A constraint list can be queried if it has a `DynamicsConstraint` via
 # Constructor
 	ConstraintList(n::Int, m::Int, N::Int)
 """
-struct ConstraintList <: AbstractConstraintSet
+struct ConstraintList{TM,TV} <: AbstractConstraintSet
+    n::Int
+    m::Int
+    N::Int
 	constraints::Vector{AbstractConstraint}
 	inds::Vector{AbstractVector} # active knot points for each constraint in constraints
+    M::TM
+    V::TV
 end
 
-function ConstraintList()
+function ConstraintList(n::Int, m::Int, N::Int, M::TM, V::TV) where {TM,TV}
     constraints = AbstractConstraint[]
     inds = AbstractVector[]
-    return ConstraintList(constraints, inds)
+    return ConstraintList{TM,TV}(n, m, N, constraints, inds, M, V)
 end
+
+# methods
+Base.length(cons::ConstraintList) = length(cons.constraints)
 
 
 """
@@ -111,79 +119,79 @@ function add_constraint!(cons::ConstraintList, con::AbstractConstraint, inds::Ab
     return nothing
 end
 
-# Iteration
-Base.iterate(cons::ConstraintList) = length(cons) == 0 ? nothing : (cons[1], 1)
-Base.iterate(cons::ConstraintList, i::Int) = i < length(cons) ? (cons[i+1], i+1) : nothing
-@inline Base.length(cons::ConstraintList) = length(cons.constraints)
-Base.IteratorSize(::ConstraintList) = Base.HasLength()
-Base.IteratorEltype(::ConstraintList) = Base.HasEltype()
-Base.eltype(::ConstraintList) = AbstractConstraint
-Base.firstindex(::ConstraintList) = 1
-Base.lastindex(cons::ConstraintList) = length(cons.constraints)
+# # Iteration
+# Base.iterate(cons::ConstraintList) = length(cons) == 0 ? nothing : (cons[1], 1)
+# Base.iterate(cons::ConstraintList, i::Int) = i < length(cons) ? (cons[i+1], i+1) : nothing
+# @inline Base.length(cons::ConstraintList) = length(cons.constraints)
+# Base.IteratorSize(::ConstraintList) = Base.HasLength()
+# Base.IteratorEltype(::ConstraintList) = Base.HasEltype()
+# Base.eltype(::ConstraintList) = AbstractConstraint
+# Base.firstindex(::ConstraintList) = 1
+# Base.lastindex(cons::ConstraintList) = length(cons.constraints)
 
-Base.zip(cons::ConstraintList) = zip(cons.inds, cons.constraints)
+# Base.zip(cons::ConstraintList) = zip(cons.inds, cons.constraints)
 
-@inline Base.getindex(cons::ConstraintList, i::Int) = cons.constraints[i]
+# @inline Base.getindex(cons::ConstraintList, i::Int) = cons.constraints[i]
 
-for method in (:deepcopy, :copy)
-	@eval function Base.$method(cons::ConstraintList)
-		cons2 = ConstraintList(cons.n, cons.m, length(cons.p))
-		for i in eachindex(cons.constraints)
-			con_ = $(method == :deepcopy ? :(copy(cons.constraints[i])) : :(cons.constraints[i]))
-			add_constraint!(cons2, con_, copy(cons.inds[i]))
-		end
-		return cons2
-	end
-end
+# for method in (:deepcopy, :copy)
+# 	@eval function Base.$method(cons::ConstraintList)
+# 		cons2 = ConstraintList(cons.n, cons.m, length(cons.p))
+# 		for i in eachindex(cons.constraints)
+# 			con_ = $(method == :deepcopy ? :(copy(cons.constraints[i])) : :(cons.constraints[i]))
+# 			add_constraint!(cons2, con_, copy(cons.inds[i]))
+# 		end
+# 		return cons2
+# 	end
+# end
 
 
-"""
-	num_constraints(::ConstraintList)
-	num_constraints(::Problem)
-	num_constraints(::TrajOptNLP)
+# """
+# 	num_constraints(::ConstraintList)
+# 	num_constraints(::Problem)
+# 	num_constraints(::TrajOptNLP)
 
-Return a vector of length `N` constaining the total number of constraint values at each
-knot point.
-"""
-@inline num_constraints(cons::ConstraintList) = cons.p
+# Return a vector of length `N` constaining the total number of constraint values at each
+# knot point.
+# """
+# @inline num_constraints(cons::ConstraintList) = cons.p
 
-function num_constraints!(cons::ConstraintList)
-	cons.p .*= 0
-	for i = 1:length(cons)
-		p = length(cons[i])
-		for k in cons.inds[i]
-			cons.p[k] += p
-		end
-	end
-end
+# function num_constraints!(cons::ConstraintList)
+# 	cons.p .*= 0
+# 	for i = 1:length(cons)
+# 		p = length(cons[i])
+# 		for k in cons.inds[i]
+# 			cons.p[k] += p
+# 		end
+# 	end
+# end
 
-function change_dimension(cons::ConstraintList, n::Int, m::Int, ix=1:n, iu=1:m)
-	new_list = ConstraintList(n, m, length(cons.p))
-	for (i,con) in enumerate(cons)
-		new_con = change_dimension(con, n, m, ix, iu)
-		add_constraint!(new_list, new_con, cons.inds[i])
-	end
-	return new_list
-end
+# function change_dimension(cons::ConstraintList, n::Int, m::Int, ix=1:n, iu=1:m)
+# 	new_list = ConstraintList(n, m, length(cons.p))
+# 	for (i,con) in enumerate(cons)
+# 		new_con = change_dimension(con, n, m, ix, iu)
+# 		add_constraint!(new_list, new_con, cons.inds[i])
+# 	end
+# 	return new_list
+# end
 
-# sort the constraint list by stage < coupled, preserving ordering
-function Base.sort!(cons::ConstraintList; rev::Bool=false)
-	lt(con1,con2) = false
-	lt(con1::StageConstraint, con2::CoupledConstraint) = true
-	inds = sortperm(cons.constraints, alg=MergeSort, lt=lt, rev=rev)
-	permute!(cons.inds, inds)
-	permute!(cons.constraints, inds)
-	return cons
-end
+# # sort the constraint list by stage < coupled, preserving ordering
+# function Base.sort!(cons::ConstraintList; rev::Bool=false)
+# 	lt(con1,con2) = false
+# 	lt(con1::StageConstraint, con2::CoupledConstraint) = true
+# 	inds = sortperm(cons.constraints, alg=MergeSort, lt=lt, rev=rev)
+# 	permute!(cons.inds, inds)
+# 	permute!(cons.constraints, inds)
+# 	return cons
+# end
 
-function has_dynamics_constraint(conSet::ConstraintList)
-	for con in conSet
-		if con isa DynamicsConstraint
-			return true
-		end
-	end
-	return false
-end
+# function has_dynamics_constraint(conSet::ConstraintList)
+# 	for con in conSet
+# 		if con isa DynamicsConstraint
+# 			return true
+# 		end
+# 	end
+# 	return false
+# end
 
 
 

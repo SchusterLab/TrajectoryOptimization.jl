@@ -63,22 +63,22 @@ get_inds(con::DynamicsConstraint{<:Explicit}, n, m) = (1:n+m, (n+m) .+ (1:n))
 
 # Explict 
 function evaluate(con::DynamicsConstraint{Q}, z1::AbstractKnotPoint, z2::AbstractKnotPoint) where Q <: Explicit
-    RobotDynamics.discrete_dynamics(Q, con.model, z1) - state(z2)
+    return RobotDynamics.discrete_dynamics(Q, con.model, z1) - state(z2)
 end
 
 function jacobian!(∇c, con::DynamicsConstraint{Q},
-		   z::AbstractKnotPoint, z2::AbstractKnotPoint, i=1) where {Q}
+		           z::AbstractKnotPoint, z2::AbstractKnotPoint, i=1) where {Q}
     n = length(z.x)
     if i == 1
-	RobotDynamics.discrete_jacobian!(Q, ∇c, con.model, z)
-	return false  # not constant
+	    RobotDynamics.discrete_jacobian!(Q, ∇c, con.model, z)
+	    return false  # not constant
     elseif i == 2
-	for i = 1:n
-	    ∇c[i,i] = -1
-	end
-	return true   # is constant
+	    for i = 1:n
+	        ∇c[i,i] = -1
+	    end
+	    return true   # is constant
     end
-    # return nothing
+    return nothing
 end
 
 function ∇jacobian!(G, con::DynamicsConstraint{<:Explicit},

@@ -4,10 +4,6 @@ costfunctions.jl
 
 import Base: copy, +
 
-#*********************************#
-#       COST FUNCTION CLASS       #
-#*********************************#
-
 """
 Abstract type that represents a scalar-valued function that accepts a state and control
 at a single knot point.
@@ -81,83 +77,52 @@ Base.copy(cost::QuadraticCost{TQ,TR,TH,Tq,Tr,T}) where {TQ,TR,TH,Tq,Tr,T} = (
 
 
 # evaluation methods
-"""
-    stage_cost(cost::QuadraticCost, x, u)
-    stage_cost(cost::QuadraticCost, x)
-
-Calculate the scalar cost using `cost` given state `x` and control `u`. If only the
-state is provided, it is assumed it is a terminal cost.
-"""
-function cost(cost_::QuadraticCost, x::AbstractVector)
-    return 0.5 * x' * cost_.Q * x + dot(cost_.q, x) + cost_.c
-end
-
-function cost(cost_::QuadraticCost, x::AbstractVector, u::AbstractVector)
-    J = cost(cost_, x)
+function cost(cost_::QuadraticCost, X::AbstractVector, U::AbstractVector, k::Int; terminal=false)
+    cost__ = 0.5 * X[k]' * cost_.Q * X[k] + dot(cost_.q, X[k]) + cost_.c
     if cost_.use_R
-        J += 0.5 * u' * cost_.R * u
+        cost__ += 0.5 * U[k]' * cost_.R * U[k]
     end
     if cost_.use_H
-        J += u' * cost_.H * x
+        cost__ += U[k]' * cost_.H * X[k]
     end
     if cost_.use_r
-        J += dot(cost_.r, u)
+        cost__ += dot(cost_.r, U[k])
     end
-    return J
+    return cost__
 end
 
-"""
-    gradient!(E::QuadraticCost, cost::CostFunction, x, u)
-    gradient!(E::QuadraticCost, cost::CostFunction, x)
-
-Evaluate the gradient of the cost function `cost` at state `x` and control `u`, storing
-    the result in `E.q` and `E.r`. Return a `true` if the gradient is constant, and `false`
-    otherwise.
-"""
-function gradient!(E::QuadraticCost, cost::QuadraticCost, x::AbstractVector)
-    E.q .= cost.Q * x .+ cost.q
-end
-
-function gradient!(E::QuadraticCost, cost::QuadraticCost, x::AbstractVector, u::AbstractVector)
-    gradient!(E, cost, x)
-    E.r .= cost.R * u
-    if cost.use_r
-        E.r .+= cost.r
-    end
-    if cost.use_H
-        E.q .+= cost.H'u
-        E.r .+= cost.H*x
-    end
-end
-
-"""
-    hessian!(E::QuadraticCost, cost::QuadraticCost x, u)
-    hessian!(E::QuadraticCost, cost::QuadraticCost, x)
-
-Evaluate the hessian of the cost function `cost` at state `x` and control `u`, storing
-    the result in `E.Q`, `E.R`, and `E.H`. Return a `true` if the hessian is constant, and `false`
-    otherwise.
-"""
-function hessian!(E::QuadraticCost, cost::QuadraticCost, x::AbstractVector)
-    if cost.Q_diag
-        for i = 1:length(x); E.Q[i,i] = cost.Q[i,i] end
-    else
-        E.Q .= cost.Q
-    end
-end
-
-function hessian!(E::QuadraticCost, cost::QuadraticCost, x, u)
-    hessian!(E, cost, x)
+function cost_derivatives!(E::QuadraticCost, cost::QuadraticCost, X::AbstractVector,
+                           U::AbstractVector, k::Int; terminal=false)
+    E.Q .= cost.Q
+    mul!(E.q, cost.Q, X[k])
+    E.q .+= cost.q
     if cost.use_R
-        if cost.R_diag
-            for i = 1:length(u); E.R[i,i] = cost.R[i,i]; end
-        else
-            E.R .= cost.R
-        end
+        E.R .= cost.R
+        mul!(E.r, cost.R, U[k])
+    else
+        E.R .= 0
     end
     if cost.use_H
         E.H .= cost.H
+        mul!(E.q, Transpose(cost.H), U[k], 1., 1.)
+        if cost.use_R
+            mul!(E.r, cost.H, X[k], 1., 1.)
+        else
+            mul!(E.r, cost.H, X[k])
+        end
+    else
+        E.H .= 0
     end
+    if cost.use_r
+        if cost.use_R || cost.use_H
+            E.r .+= cost.r
+        else
+            E.r .= cost.r
+        end
+    else
+        E.r .= 0
+    end
+    return nothing
 end
 
 # LQRCost
