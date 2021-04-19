@@ -15,8 +15,8 @@ const NULL_VEC = Array{Float64,1}(undef, 0)
 # general
 
 @enum ConstraintSense begin
-    equality = 1
-    inequality = 2
+    EQUALITY = 1
+    INEQUALITY = 2
 end
 
 abstract type AbstractConstraint end
@@ -91,7 +91,7 @@ function GoalConstraint(n::Int, m::Int, xf::Tx, inds::Ti, M, V; direct::Bool=fal
     state_expansion = true
     control_expansion = false
     coupled_expansion = false
-    sense = equality
+    sense = EQUALITY
     con = GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}(
         n, m, p, xf_, inds, XP_tmp, UP_tmp, p_tmp, Cx, Cu, const_jac,
         state_expansion, control_expansion, coupled_expansion, direct, sense
@@ -130,18 +130,22 @@ function jacobian_copy!(D::AbstractMatrix, con::GoalConstraint,
     return nothing
 end
 
-# Methods
-Base.copy(con::GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}) where {Tx,Ti,Txp,Tup,Tp,Tpx,Tpu} = (
-    GoalConstraint{Tx,Ti,Txp,Tup,Tp,Tpx,Tpu}(
-        con.n, con.m, copy(con.xf), con.inds, con.p, copy(con.XP_tmp),
-        copy(con.UP_tmp), deepcopy(con.p_tmp), copy(con.Cx), copy(con.Cu), con.const_jac,
-        con.state_expansion, con.control_expansion, con.coupled_expansion, con.direct
-    )
-)
-@inline sense(::GoalConstraint) = Equality()
+# methods
 @inline Base.length(con::GoalConstraint) = con.p
-@inline state_dim(con::GoalConstraint) = con.n
-@inline is_bound(::GoalConstraint) = true
+
+function max_violation_info(con::GoalConstraint, c::AbstractVector, k::Int)
+    max_viol = -Inf
+    info_str = ""
+    for i in con.inds
+        viol = abs(c[i])
+        if viol > max_viol
+            info_str = "GoalConstraint x[$i] k=$k"
+            max_viol = viol
+        end
+    end
+    return max_viol, info_str
+end
+
 
 
 """
@@ -179,7 +183,7 @@ function DynamicsConstraint(n::Int, m::Int, ir::Tir, model::Tm, ts::Vector{T},
     Txu = typeof(B)
     Txz = typeof(AB)
     const_jac = false
-    sense = inequality
+    sense = EQUALITY
     con = DynamicsConstraint{T,Tir,Tm,Tix,Tiu,Tx,Txx,Txu,Txz}(
         n, m, ir, model, ts, ix, iu, x_tmp, A, B, AB, const_jac, direct, sense
     )
@@ -220,6 +224,19 @@ end
 
 # methods
 @inline Base.length(con::DynamicsConstraint) = con.n
+
+function max_violation_info(con::DynamicsConstraint, c::AbstractVector, k::Int)
+    max_viol = -Inf
+    info_str = ""
+    for i = 1:con.n
+        viol = abs(c[i])
+        if viol > max_viol
+            info_str = "DynamicsConstraint x[$i] k=$k"
+            max_viol = viol
+        end
+    end
+    return max_viol, info_str
+end
 
 
 """
@@ -310,7 +327,7 @@ function BoundConstraint(n::Int, m::Int, x_max::Tx, x_min::Tx,
     Cx = M(zeros(p, n))
     Cu = M(zeros(p, m))
     const_jac = true
-    sense = inequality
+    sense = INEQUALITY
     # types
     Tixu = typeof(x_max_inds)
     Tixl = typeof(x_min_inds)
@@ -335,15 +352,21 @@ end
 
 # evaluation
 function evaluate!(c::AbstractVector, con::BoundConstraint, X::AbstractVector,
-                   U::AbstractVector, k::Int)
+                   U::AbstractVector, k::Int; log=false)
     for (i, j) in con.x_max_inds
         c[i] = X[k][j] - con.x_max[j]
+        # if k == 79 && log
+        #     println("c[$i]: $(c[i]), X[$k][$j]: $(X[k][j]), x_max[j]: $(con.x_max[j])")
+        # end
     end
     for (i, j) in con.u_max_inds
         c[i] = U[k][j] - con.u_max[j]
     end
     for (i, j) in con.x_min_inds
         c[i] = con.x_min[j] - X[k][j]
+        # if k == 79 && log
+        #     println("c[$i]: $(c[i]), X[$k][$j]: $(X[k][j]), x_min[j]: $(con.x_min[j])")
+        # end
     end
     for (i, j) in con.u_min_inds
         c[i] = con.u_min[j] - U[k][j]
@@ -388,33 +411,38 @@ function jacobian_copy!(D::AbstractMatrix, con::BoundConstraint,
 end
 
 # methods
-Base.copy(con::BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu}) where {
-    Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu} = (
-    BoundConstraint{Tx,Tu,Tixu,Tixl,Tiuu,Tiul,Ti,Txp,Tup,Tp,Tpx,Tpu}(
-        con.n, con.m, copy(con.x_max), copy(con.x_min), copy(con.u_max), copy(con.u_min),
-        copy(con.x_max_inds), copy(con.x_min_inds), copy(con.u_max_inds), copy(con.u_min_inds),
-        copy(con.inds), copy(XP_tmp), copy(UP_tmp), deepcopy(p_tmp), copy(con.Cx),
-        copy(con.Cu), con.const_jac, con.state_expansion, con.control_expansion,
-        con.coupled_expansion, cond.direct
-    )
-)
 @inline Base.length(con::BoundConstraint) = con.p
 
-function con_label(con::BoundConstraint, ind::Int)
-	i = con.inds[ind]
-	n,m = state_dim(con), control_dim(con)
-	if 1 <= i <= n
-		return "x max $i"
-	elseif n < i <= n + m
-		j = i - n
-		return "u max $j"
-	elseif n + m < i <= 2n+m
-		j = i - (n+m)
-		return "x min $j"
-	elseif 2n+m < i <= 2n+2m
-		j = i - (2n+m)
-		return "u min $j"
-	else
-		throw(BoundsError())
-	end
+function max_violation_info(con::BoundConstraint, c::AbstractVector, k::Int)
+    max_viol = -Inf
+    info_str = ""
+    for (i, j) in con.x_max_inds
+        viol = c[i]
+        if viol > max_viol
+            max_viol = viol
+            info_str = "BoundConstraint x_max[$j] k=$k"
+        end
+    end
+    for (i, j) in con.u_max_inds
+        viol = c[i]
+        if viol > max_viol
+            max_viol = viol
+            info_str = "BoundConstraint u_max[$j] k=$k"
+        end
+    end
+    for (i, j) in con.x_min_inds
+        viol = c[i]
+        if viol > max_viol
+            max_viol = viol
+            info_str = "BoundConstraint x_min[$j] k=$k"
+        end
+    end
+    for (i, j) in con.u_min_inds
+        viol = c[i]
+        if viol > max_viol
+            max_viol = viol
+            info_str = "BoundConstraint u_min[$j] k=$k"
+        end
+    end
+    return max_viol, info_str
 end

@@ -17,51 +17,18 @@ const MOI = MathOptInterface
 import RobotDynamics
 const RD = RobotDynamics
 
-using RobotDynamics: AbstractModel, LieGroupModel,
-    AbstractKnotPoint,
-    QuadratureRule, Implicit, Explicit, DEFAULT_Q, HermiteSimpson,
-    is_terminal, state_diff, state_diff_jacobian!, state_diff_jacobian,
-    state, control, states, controls, get_times, Traj, AbstractTrajectory,
-    num_vars
+using RobotDynamics: AbstractModel, LieGroupModel, QuadratureRule, Implicit, Explicit
+    # AbstractKnotPoint,
+    # DEFAULT_Q, HermiteSimpson,
+    # is_terminal, state_diff, state_diff_jacobian!, state_diff_jacobian,
+    # state, control, states, controls, get_times, Traj, AbstractTrajectory,
+    # num_vars
 
-import RobotDynamics: jacobian!, state_dim, control_dim, states, controls, 
-	state_diff_jacobian!, rollout!
+# import RobotDynamics: jacobian!, state_dim, control_dim, states, controls, 
+# 	state_diff_jacobian!, rollout!
 
-# API
-export  # types
-    Problem,
-    Objective,
-    LQRObjective,
-    ConstraintList,
-    DiagonalCost,
-    QuadraticCost,
-    LQRCost,
-    Traj,
-    TrajOptNLP,
-    KnotPoint,   # from RobotDynamics
-    ConstraintParams,
-    SolverOptions,
 
-export  # methods
-	# cost,
-	# max_violation,
-	# initial_controls!,
-	# initial_states!,
-	# initial_trajectory!,
-	rollout!,
-	states,
-	controls,
-	# get_trajectory,
-	state_dim,    # from RobotDynamics
-	control_dim   # from RobotDynamics
-
-export
-	GoalConstraint,
-    DynamicsConstraint,
-	BoundConstraint,
-	add_constraint!
-
-# include("expansions.jl")
+    # include("expansions.jl")
 include("costfunctions.jl")
 include("objective.jl")
 
@@ -81,4 +48,36 @@ include("problem.jl")
 # include("nlp.jl")
 
 include("utils.jl")
+# API
+export  # types
+    Problem,
+    Objective,
+    LQRObjective,
+    ConstraintList,
+    DiagonalCost,
+    QuadraticCost,
+    LQRCost,
+    Traj,
+    TrajOptNLP,
+    ConstraintParams,
+    SolverOptions,
+
+# export  # methods
+# 	# cost,
+# 	# max_violation,
+# 	# initial_controls!,
+# 	# initial_states!,
+# 	# initial_trajectory!,
+# 	rollout!,
+# 	states,
+# 	controls,
+# 	# get_trajectory,
+# 	state_dim,    # from RobotDynamics
+# 	control_dim   # from RobotDynamics
+
+export
+	GoalConstraint,
+    DynamicsConstraint,
+	BoundConstraint,
+	add_constraint!
 end

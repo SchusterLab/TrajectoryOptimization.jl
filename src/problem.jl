@@ -125,181 +125,181 @@ end
 Get number of states, controls, and knot points"
 Base.size(prob::Problem) = size(prob.model)..., prob.N
 
-"""```julia
-integration(::Problem)
-integration(::DynamicsConstraint)
-```
-Get the integration rule"""
-integration(prob::Problem{Q}) where Q = Q
+# """```julia
+# integration(::Problem)
+# integration(::DynamicsConstraint)
+# ```
+# Get the integration rule"""
+# integration(prob::Problem{Q}) where Q = Q
 
-"```julia
-controls(::Problem)
-controls(::Traj)
-```
-Get the control trajectory
-"
-controls(prob::Problem) = prob.U
+# "```julia
+# controls(::Problem)
+# controls(::Traj)
+# ```
+# Get the control trajectory
+# "
+# controls(prob::Problem) = prob.U
 
-"```julia
-states(::Problem)
-states(::Traj)
-```
-Get the state trajectory
-"
-states(prob::Problem) = prob.X
+# "```julia
+# states(::Problem)
+# states(::Traj)
+# ```
+# Get the state trajectory
+# "
+# states(prob::Problem) = prob.X
 
-"""
-	get_times(::Problem)
+# """
+# 	get_times(::Problem)
 
-Get the times for all the knot points in the problem.
-"""
-@inline RobotDynamics.get_times(prob::Problem) = prob.ts
-
-
-"""
-	initial_trajectory!(prob::Problem, Z)
-
-Copy the trajectory
-"""
-function initial_trajectory!(prob, Z0::AbstractTrajectory)
-    Z = get_trajectory(prob)
-    for k = 1:prob.N
-        Z[k].z = Z0[k].z
-    end
-end
-
-"""
-	initial_states!(::Problem, X0::Vector{<:AbstractVector})
-	initial_states!(::Problem, X0::AbstractMatrix)
-
-Copy the state trajectory
-"""
-@inline initial_states!(prob, X0) = RobotDynamics.set_states!(get_trajectory(prob), X0)
+# Get the times for all the knot points in the problem.
+# """
+# @inline RobotDynamics.get_times(prob::Problem) = prob.ts
 
 
-"""
-	set_initial_state!(prob::Problem, x0::AbstractVector)
+# """
+# 	initial_trajectory!(prob::Problem, Z)
 
-Set the initial state in `prob` to `x0`
-"""
-function set_initial_state!(prob::Problem, x0::AbstractVector)
-    prob.x0 .= x0
-end
+# Copy the trajectory
+# """
+# function initial_trajectory!(prob, Z0::AbstractTrajectory)
+#     Z = get_trajectory(prob)
+#     for k = 1:prob.N
+#         Z[k].z = Z0[k].z
+#     end
+# end
 
-"""
-    set_initial_time!(prob, t0)
+# """
+# 	initial_states!(::Problem, X0::Vector{<:AbstractVector})
+# 	initial_states!(::Problem, X0::AbstractMatrix)
 
-Set the initial time of the optimization problem, shifting the time of all points in the trajectory.
-Returns the updated final time.
-"""
-function set_initial_time!(prob, t0::Real)
-    Z = get_trajectory(prob)
-    Δt = t0 - Z[1].t
-    for k in eachindex(Z)
-        Z[k].t += Δt
-    end
-    return Z[end].t 
-end
-
-function set_goal_state!(prob::Problem, xf::AbstractVector; objective=true, constraint=true)
-    if objective
-        obj = get_objective(prob)
-        for k in eachindex(obj.cost)
-            set_LQR_goal!(obj[k], xf)
-        end
-    end
-    if constraint
-        for con in get_constraints(prob)
-            if con isa GoalConstraint
-                set_goal_state!(con, xf)
-            end
-        end
-    end
-    copyto!(prob.xf, xf)
-    return nothing
-end
-
-"""
-	initial_controls!(::Problem, U0::Vector{<:AbstractVector})
-	initial_controls!(::Problem, U0::AbstractMatrx)
-
-Copy the control trajectory
-"""
-@inline initial_controls!(prob, U0) = RobotDynamics.set_controls!(get_trajectory(prob), U0)
-
-"```julia
-cost(::Problem)
-cost(::AbstractSolver)
-```
-Compute the cost for the current trajectory"
-@inline cost(prob::Problem) = cost(prob.obj, prob.Z)
-
-"Copy the problem"
-function copy(prob::Problem{Q}) where Q
-    Problem{Q}(prob.model, copy(prob.obj), copy(prob.constraints), prob.x0, prob.xf,
-        copy(prob.Z), prob.N, prob.t0, prob.tf)
-end
+# Copy the state trajectory
+# """
+# @inline initial_states!(prob, X0) = RobotDynamics.set_states!(get_trajectory(prob), X0)
 
 
-function max_violation(prob::Problem, Z::Traj=prob.Z)
-    conSet = get_constraints(prob)
-    evaluate!(conSet, Z)
-    max_violation!(conSet)
-    return maximum(conSet.c_max)
-end
+# """
+# 	set_initial_state!(prob::Problem, x0::AbstractVector)
 
-num_constraints(prob::Problem) = get_constraints(prob).p
+# Set the initial state in `prob` to `x0`
+# """
+# function set_initial_state!(prob::Problem, x0::AbstractVector)
+#     prob.x0 .= x0
+# end
 
-@inline get_constraints(prob::Problem) = prob.constraints
-@inline get_model(prob::Problem) = prob.model
-@inline get_objective(prob::Problem) = prob.obj
-@inline get_trajectory(prob::Problem) = prob.Z
-@inline is_constrained(prob) = isempty(get_constraints(prob))
-@inline get_initial_state(prob::Problem) = prob.x0
+# """
+#     set_initial_time!(prob, t0)
 
-states(x) = states(get_trajectory(x))
-controls(x) = controls(get_trajectory(x))
+# Set the initial time of the optimization problem, shifting the time of all points in the trajectory.
+# Returns the updated final time.
+# """
+# function set_initial_time!(prob, t0::Real)
+#     Z = get_trajectory(prob)
+#     Δt = t0 - Z[1].t
+#     for k in eachindex(Z)
+#         Z[k].t += Δt
+#     end
+#     return Z[end].t 
+# end
 
-"```julia
-change_integration(prob::Problem, Q<:QuadratureRule)
-```
-Change dynamics integration for the problem"
-change_integration(prob::Problem, ::Type{Q}) where Q<:QuadratureRule =
-    Problem{Q}(prob)
+# function set_goal_state!(prob::Problem, xf::AbstractVector; objective=true, constraint=true)
+#     if objective
+#         obj = get_objective(prob)
+#         for k in eachindex(obj.cost)
+#             set_LQR_goal!(obj[k], xf)
+#         end
+#     end
+#     if constraint
+#         for con in get_constraints(prob)
+#             if con isa GoalConstraint
+#                 set_goal_state!(con, xf)
+#             end
+#         end
+#     end
+#     copyto!(prob.xf, xf)
+#     return nothing
+# end
 
-function Problem{Q}(p::Problem) where Q
-    Problem{Q}(p.model, p.obj, p.constraints, p.x0, p.xf, p.Z, p.N, p.t0, p.tf)
-end
+# """
+# 	initial_controls!(::Problem, U0::Vector{<:AbstractVector})
+# 	initial_controls!(::Problem, U0::AbstractMatrx)
 
-"""
-	rollout!(::Problem)
+# Copy the control trajectory
+# """
+# @inline initial_controls!(prob, U0) = RobotDynamics.set_controls!(get_trajectory(prob), U0)
 
-Simulate the dynamics forward from the initial condition `x0` using the controls in the
-trajectory `Z`.
-If a problem is passed in, `Z = prob.Z`, `model = prob.model`, and `x0 = prob.x0`.
-"""
-@inline rollout!(prob::Problem{Q}) where {Q} = rollout!(Q, get_model(prob), get_trajectory(prob), get_initial_state(prob))
+# "```julia
+# cost(::Problem)
+# cost(::AbstractSolver)
+# ```
+# Compute the cost for the current trajectory"
+# @inline cost(prob::Problem) = cost(prob.obj, prob.Z)
 
-function Problem(p::Problem; model=p.model, obj=p.obj, constraints=p.constraints,
-    x0=p.x0, xf=p.xf, t0=p.t0, tf=p.tf)
-    Problem(model, obj, constraints, x0, xf, p.Z, p.N, t0, tf)
-end
+# "Copy the problem"
+# function copy(prob::Problem{Q}) where Q
+#     Problem{Q}(prob.model, copy(prob.obj), copy(prob.constraints), prob.x0, prob.xf,
+#         copy(prob.Z), prob.N, prob.t0, prob.tf)
+# end
 
-"```julia
-add_dynamics_constraints!(prob::Problem)
-```
-Add dynamics constraints to the constraint set"
-function add_dynamics_constraints!(prob::Problem{Q}, integration=Q, idx=-1) where Q
-	n,m = size(prob)
-    conSet = prob.constraints
 
-    # Implicit dynamics
-    dyn_con = DynamicsConstraint{integration}(prob.model, prob.N)
-    add_constraint!(conSet, dyn_con, 1:prob.N-1, idx) # add it at the end
+# function max_violation(prob::Problem, Z::Traj=prob.Z)
+#     conSet = get_constraints(prob)
+#     evaluate!(conSet, Z)
+#     max_violation!(conSet)
+#     return maximum(conSet.c_max)
+# end
 
-    # Initial condition
-    init_con = GoalConstraint(prob.x0)
-    add_constraint!(conSet, init_con, 1, 1)  # add it at the top
+# num_constraints(prob::Problem) = get_constraints(prob).p
 
-    return nothing
-end
+# @inline get_constraints(prob::Problem) = prob.constraints
+# @inline get_model(prob::Problem) = prob.model
+# @inline get_objective(prob::Problem) = prob.obj
+# @inline get_trajectory(prob::Problem) = prob.Z
+# @inline is_constrained(prob) = isempty(get_constraints(prob))
+# @inline get_initial_state(prob::Problem) = prob.x0
+
+# states(x) = states(get_trajectory(x))
+# controls(x) = controls(get_trajectory(x))
+
+# "```julia
+# change_integration(prob::Problem, Q<:QuadratureRule)
+# ```
+# Change dynamics integration for the problem"
+# change_integration(prob::Problem, ::Type{Q}) where Q<:QuadratureRule =
+#     Problem{Q}(prob)
+
+# function Problem{Q}(p::Problem) where Q
+#     Problem{Q}(p.model, p.obj, p.constraints, p.x0, p.xf, p.Z, p.N, p.t0, p.tf)
+# end
+
+# """
+# 	rollout!(::Problem)
+
+# Simulate the dynamics forward from the initial condition `x0` using the controls in the
+# trajectory `Z`.
+# If a problem is passed in, `Z = prob.Z`, `model = prob.model`, and `x0 = prob.x0`.
+# """
+# @inline rollout!(prob::Problem{Q}) where {Q} = rollout!(Q, get_model(prob), get_trajectory(prob), get_initial_state(prob))
+
+# function Problem(p::Problem; model=p.model, obj=p.obj, constraints=p.constraints,
+#     x0=p.x0, xf=p.xf, t0=p.t0, tf=p.tf)
+#     Problem(model, obj, constraints, x0, xf, p.Z, p.N, t0, tf)
+# end
+
+# "```julia
+# add_dynamics_constraints!(prob::Problem)
+# ```
+# Add dynamics constraints to the constraint set"
+# function add_dynamics_constraints!(prob::Problem{Q}, integration=Q, idx=-1) where Q
+# 	n,m = size(prob)
+#     conSet = prob.constraints
+
+#     # Implicit dynamics
+#     dyn_con = DynamicsConstraint{integration}(prob.model, prob.N)
+#     add_constraint!(conSet, dyn_con, 1:prob.N-1, idx) # add it at the end
+
+#     # Initial condition
+#     init_con = GoalConstraint(prob.x0)
+#     add_constraint!(conSet, init_con, 1, 1)  # add it at the top
+
+#     return nothing
+# end

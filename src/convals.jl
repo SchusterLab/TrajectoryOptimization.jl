@@ -53,9 +53,9 @@ end
 # methods
 function update_active!(a::AbstractVector, con::AbstractConstraint,
                         c::AbstractVector, λ::AbstractVector, tol::Real)
-    if con.sense == equality
+    if con.sense == EQUALITY
         a.= true
-    elseif con.sense == inequality
+    elseif con.sense == INEQUALITY
         for i = 1:length(a)
             a[i] = ((c[i] >= tol) | (abs(λ[i]) > tol))
         end
@@ -65,20 +65,31 @@ end
 
 function violation(con::AbstractConstraint, c::AbstractVector)
     viol = 0.
-    if con.sense == equality
+    if con.sense == EQUALITY
         viol = norm(c, Inf)
-    elseif con.sense == inequality
+    elseif con.sense == INEQUALITY
         viol = max(0., maximum(c))
     end
     return viol
 end
 
+@inline show_nice(x) = show(IOContext(stdout), "text/plain", x)
+
 function update_dual_penalty!(convals::Vector{Vector{ConVal}})
-    for convals_ in convals
+    for (k, convals_) in enumerate(convals)
         for conval in convals_
+            # if k == 79 && !conval.con.direct
+            #     println("c")
+            #     show_nice(conval.c)
+            #     println("\nλ")
+            #     show_nice(conval.λ)
+            #     println("\nμ")
+            #     show_nice(conval.μ)
+            #     println("")
+            # end
             # update dual
             λ_max = conval.params.λ_max
-            λ_min = conval.con.sense == equality ? -λ_max : zero(λ_max)
+            λ_min = conval.con.sense == EQUALITY ? -λ_max : zero(λ_max)
             for i in eachindex(conval.λ)
                 conval.λ[i] = clamp(conval.λ[i] + conval.μ[i] * conval.c[i], λ_min, λ_max)
             end
@@ -86,8 +97,16 @@ function update_dual_penalty!(convals::Vector{Vector{ConVal}})
             for i in eachindex(conval.μ)
                 conval.μ[i] = clamp(conval.params.ϕ * conval.μ[i], 0, conval.params.μ_max)
             end
+            # if k == 79 && !conval.con.direct
+            #     println("λ")
+            #     show_nice(conval.λ)
+            #     println("\nμ")
+            #     show_nice(conval.μ)
+            #     println("")
+            # end
         end
     end
+    return nothing
 end
 
 function max_violation_penalty(convals::Vector{Vector{ConVal}})
@@ -101,6 +120,21 @@ function max_violation_penalty(convals::Vector{Vector{ConVal}})
         end
     end
     return max_violation, max_penalty
+end
+
+function max_violation_info(convals::Vector{Vector{ConVal}})
+    max_viol = -Inf
+    info_str = ""
+    for (k, convals_) in enumerate(convals)
+        for conval in convals_
+            max_viol_, info_str_ = max_violation_info(conval.con, conval.c, k)
+            if max_viol_ > max_viol
+                max_viol = max_viol_
+                info_str = info_str_
+            end
+        end
+    end
+    return max_viol, info_str
 end
 
 
