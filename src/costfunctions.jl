@@ -93,34 +93,38 @@ end
 
 function cost_derivatives!(E::QuadraticCost, cost::QuadraticCost, X::AbstractVector,
                            U::AbstractVector, k::Int; terminal=false)
+    # E.Q
     E.Q .= cost.Q
-    mul!(E.q, cost.Q, X[k])
-    E.q .+= cost.q
+    # E.q
+    E.q .= cost.q
+    mul!(E.q, cost.Q, X[k], 1., 1.)
+    if cost.use_H
+        mul!(E.q, Transpose(cost.H), U[k], 1., 1.)
+    end
+    # E.R
     if cost.use_R
         E.R .= cost.R
-        mul!(E.r, cost.R, U[k])
+
     else
         E.R .= 0
     end
-    if cost.use_H
-        E.H .= cost.H
-        mul!(E.q, Transpose(cost.H), U[k], 1., 1.)
-        if cost.use_R
-            mul!(E.r, cost.H, X[k], 1., 1.)
-        else
-            mul!(E.r, cost.H, X[k])
-        end
-    else
-        E.H .= 0
-    end
-    if cost.use_r
-        if cost.use_R || cost.use_H
-            E.r .+= cost.r
-        else
-            E.r .= cost.r
-        end
+    # E.r
+    if cost.use_R
+        mul!(E.r, cost.R, U[k])
     else
         E.r .= 0
+    end
+    if cost.use_r
+        E.r .+= cost.r
+    end
+    if cost.use_H
+        mul!(E.r, cost.H, X[k], 1., 1.)
+    end
+    # E.H
+    if cost.use_H
+        E.H .= cost.H
+    else
+        E.H .= 0
     end
     return nothing
 end
